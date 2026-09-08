@@ -8,6 +8,9 @@
       "vendor": "codex",
       "kind": "window",
       "usedPercent": 68,
+      "usedValue": 68,
+      "totalValue": 100,
+      "valueUnit": "percent",
       "resetsAt": 1757310560,
       "windowMins": 300,
       "accent": "blue"
@@ -18,6 +21,9 @@
       "vendor": "codex",
       "kind": "window",
       "usedPercent": 42,
+      "usedValue": 42,
+      "totalValue": 100,
+      "valueUnit": "percent",
       "resetsAt": 1757836800,
       "windowMins": 10080,
       "accent": "indigo"
@@ -31,6 +37,9 @@
       "remainingPercent": 63,
       "spentUsd": 7.42,
       "budgetUsd": 20.0,
+      "usedValue": 7.42,
+      "totalValue": 20.0,
+      "valueUnit": "USD",
       "resetsAt": 1759737600,
       "windowMins": 43200,
       "accent": "green"
@@ -55,6 +64,9 @@
       "remainingPercent": 66,
       "remaining": 13.2,
       "currency": "CNY",
+      "usedValue": 6.8,
+      "totalValue": 20.0,
+      "valueUnit": "CNY",
       "accent": "teal"
     },
     {
@@ -66,6 +78,9 @@
       "remainingPercent": 45,
       "remaining": 22.5,
       "currency": "CNY",
+      "usedValue": 27.5,
+      "totalValue": 50.0,
+      "valueUnit": "CNY",
       "accent": "purple"
     },
     {
@@ -77,6 +92,9 @@
       "remainingPercent": 30,
       "remaining": 15.0,
       "currency": "CNY",
+      "usedValue": 35.0,
+      "totalValue": 50.0,
+      "valueUnit": "CNY",
       "accent": "red"
     },
     {
@@ -85,6 +103,9 @@
       "vendor": "minimax",
       "kind": "window",
       "usedPercent": 0,
+      "usedValue": 0,
+      "totalValue": 100,
+      "valueUnit": "percent",
       "resetsAt": 1757303000,
       "windowMins": 300,
       "accent": "orange"
@@ -95,6 +116,9 @@
       "vendor": "minimax",
       "kind": "window",
       "usedPercent": 13,
+      "usedValue": 13,
+      "totalValue": 100,
+      "valueUnit": "percent",
       "resetsAt": 1757836800,
       "windowMins": 10080,
       "accent": "red"

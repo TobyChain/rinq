@@ -21,6 +21,9 @@ def _mock(_cfg: dict) -> list[dict[str, Any]]:
             "vendor": "codex",
             "kind": "window",
             "usedPercent": clamp_pct(68),
+            "usedValue": 68,
+            "totalValue": 100,
+            "valueUnit": "percent",
             "resetsAt": t + 176 * 60,
             "windowMins": 300,
             "accent": "blue",
@@ -31,6 +34,9 @@ def _mock(_cfg: dict) -> list[dict[str, Any]]:
             "vendor": "codex",
             "kind": "window",
             "usedPercent": clamp_pct(42),
+            "usedValue": 42,
+            "totalValue": 100,
+            "valueUnit": "percent",
             "resetsAt": t + 3 * 86400,
             "windowMins": 10080,
             "accent": "indigo",
@@ -43,6 +49,9 @@ def _mock(_cfg: dict) -> list[dict[str, Any]]:
             "usedPercent": clamp_pct(37),
             "spentUsd": 7.42,
             "budgetUsd": 20.0,
+            "usedValue": 7.42,
+            "totalValue": 20.0,
+            "valueUnit": "USD",
             "resetsAt": t + 20 * 86400,
             "windowMins": 43200,
             "accent": "green",
@@ -56,6 +65,9 @@ def _mock(_cfg: dict) -> list[dict[str, Any]]:
             "remainingPercent": clamp_pct(66),
             "remaining": 13.2,
             "currency": "CNY",
+            "usedValue": 6.8,
+            "totalValue": 20.0,
+            "valueUnit": "CNY",
             "accent": "teal",
         },
         {
@@ -67,6 +79,9 @@ def _mock(_cfg: dict) -> list[dict[str, Any]]:
             "remainingPercent": clamp_pct(45),
             "remaining": 22.5,
             "currency": "CNY",
+            "usedValue": 27.5,
+            "totalValue": 50.0,
+            "valueUnit": "CNY",
             "accent": "purple",
         },
         {
@@ -78,6 +93,9 @@ def _mock(_cfg: dict) -> list[dict[str, Any]]:
             "remainingPercent": clamp_pct(30),
             "remaining": 15.0,
             "currency": "CNY",
+            "usedValue": 35.0,
+            "totalValue": 50.0,
+            "valueUnit": "CNY",
             "accent": "red",
         },
         {
@@ -156,17 +174,13 @@ def _balance_ring(
         remaining_pct = clamp_pct(remaining / full * 100.0)
         ring["remainingPercent"] = remaining_pct
         ring["usedPercent"] = clamp_pct(100 - remaining / full * 100.0)
+        ring["usedValue"] = round(max(0.0, float(full) - remaining), 2)
+        ring["totalValue"] = round(float(full), 2)
+        ring["valueUnit"] = currency
     else:
         ring["remainingPercent"] = None
         if remaining is None:
             ring["status"] = "unknown"
-    return ring
-
-
-def _unknown_balance(cfg: dict, *, vid: str, label: str, accent: str) -> dict[str, Any]:
-    ring = _balance_ring(cfg, vid=vid, label=label, accent=accent, remaining=None, currency="CNY")
-    ring["status"] = "unknown"
-    ring["remainingPercent"] = None
     return ring
 
 
@@ -249,13 +263,22 @@ def _minimax_rings(data: dict[str, Any]) -> list[dict[str, Any]]:
     )
     if general is None:
         return []
+    interval_used = int(general.get("current_interval_usage_count", 0))
+    interval_total = int(general.get("current_interval_total_count", 0))
+    weekly_used = int(general.get("current_weekly_usage_count", 0))
+    weekly_total = int(general.get("current_weekly_total_count", 0))
+    interval_pct = clamp_pct(100 - int(general.get("current_interval_remaining_percent", 0)))
+    weekly_pct = clamp_pct(100 - int(general.get("current_weekly_remaining_percent", 0)))
     return [
         {
             "id": "minimax-5h",
             "label": "MiniMax 5h",
             "vendor": "minimax",
             "kind": "window",
-            "usedPercent": clamp_pct(100 - int(general.get("current_interval_remaining_percent", 0))),
+            "usedPercent": interval_pct,
+            "usedValue": interval_used if interval_total > 0 else interval_pct,
+            "totalValue": interval_total if interval_total > 0 else 100,
+            "valueUnit": "requests" if interval_total > 0 else "percent",
             "resetsAt": int(general.get("end_time", 0)) // 1000,
             "windowMins": 300,
             "accent": "orange",
@@ -265,24 +288,15 @@ def _minimax_rings(data: dict[str, Any]) -> list[dict[str, Any]]:
             "label": "MiniMax week",
             "vendor": "minimax",
             "kind": "window",
-            "usedPercent": clamp_pct(100 - int(general.get("current_weekly_remaining_percent", 0))),
+            "usedPercent": weekly_pct,
+            "usedValue": weekly_used if weekly_total > 0 else weekly_pct,
+            "totalValue": weekly_total if weekly_total > 0 else 100,
+            "valueUnit": "requests" if weekly_total > 0 else "percent",
             "resetsAt": int(general.get("weekly_end_time", 0)) // 1000,
             "windowMins": 10080,
             "accent": "red",
         },
     ]
-
-
-def _codex_unknown() -> dict[str, Any]:
-    return {
-        "id": "codex-5h",
-        "label": "Codex 5h",
-        "vendor": "codex",
-        "kind": "window",
-        "usedPercent": None,
-        "status": "unknown",
-        "accent": "blue",
-    }
 
 
 def _codex_rings(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -298,6 +312,9 @@ def _codex_rings(data: dict[str, Any]) -> list[dict[str, Any]]:
                 "vendor": "codex",
                 "kind": "window",
                 "usedPercent": clamp_pct(int(primary.get("used_percent", 0))),
+                "usedValue": clamp_pct(int(primary.get("used_percent", 0))),
+                "totalValue": 100,
+                "valueUnit": "percent",
                 "resetsAt": primary.get("reset_at"),
                 "windowMins": round(int(primary.get("limit_window_seconds", 18000)) / 60),
                 "accent": "blue",
@@ -311,6 +328,9 @@ def _codex_rings(data: dict[str, Any]) -> list[dict[str, Any]]:
                 "vendor": "codex",
                 "kind": "window",
                 "usedPercent": clamp_pct(int(secondary.get("used_percent", 0))),
+                "usedValue": clamp_pct(int(secondary.get("used_percent", 0))),
+                "totalValue": 100,
+                "valueUnit": "percent",
                 "resetsAt": secondary.get("reset_at"),
                 "windowMins": round(int(secondary.get("limit_window_seconds", 604800)) / 60),
                 "accent": "indigo",
@@ -368,6 +388,9 @@ def _openai(cfg: dict) -> list[dict[str, Any]]:
             "remainingPercent": clamp_pct((budget - spent) / budget * 100.0 if budget else None),
             "spentUsd": round(spent, 2),
             "budgetUsd": budget,
+            "usedValue": round(spent, 2),
+            "totalValue": round(budget, 2),
+            "valueUnit": "USD",
             "resetsAt": _month_end_epoch(),
             "windowMins": 43200,
             "accent": "green",

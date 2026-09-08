@@ -38,10 +38,11 @@ your keys — only quota percentages and amounts.
 
 ## macOS menu bar app
 
-A native menu-bar item (`mac/RinqMenu/`, Swift + AppKit) shows the top three
-quotas as small concentric rings right in the menu bar; click it to open the
-dashboard in a popover. It polls `127.0.0.1:7788/status` every 30s and needs
-the daemon running.
+A native menu-bar item (`mac/RinqMenu/`, Swift + AppKit) shows every configured
+quota as adaptive concentric rings; click it to open the single Rinq popover.
+The Rings tab shows every value as `used / total`; the Providers tab stores
+API keys locally, toggles vendors, and supports real drag-and-drop ring
+ordering. It polls `127.0.0.1:7788/status` every 30s and needs the daemon.
 
 It builds with the Swift compiler that ships with Xcode/CLT (no SwiftPM
 dependencies) and `install.sh` builds and launches it automatically as a
@@ -144,14 +145,14 @@ rinq push --state completed --title "noteone build" --detail "42 tests passed"
 
 The simulator build needs no signing. A physical watch needs a team:
 
-- Free Apple ID: open `watch/Rinq.xcodeproj` in Xcode, set your Personal
+- Free Apple ID: open `app/Rinq.xcodeproj` in Xcode, set your Personal
   Team on both targets, run to the watch. Re-signs every 7 days; no APNs.
-- Paid Apple Developer Program: set `DEVELOPMENT_TEAM` in `watch/project.yml`,
+- Paid Apple Developer Program: set `DEVELOPMENT_TEAM` in `app/project.yml`,
   regenerate, then one command builds + installs over the network:
 
 ```bash
 make watch-generate
-xcodebuild -project watch/Rinq.xcodeproj -scheme RinqWatch \
+xcodebuild -project app/Rinq.xcodeproj -scheme RinqWatchApp \
   -destination 'platform=watchOS,name=<your watch>' build
 ```
 
@@ -176,15 +177,20 @@ on and auto-discover credentials:
 
 Set `"collectors": ["mock"]` for synthetic demo data with no network calls.
 
-Two ring semantics:
+One display convention:
+
+- Every value is shown as `used / total`, and every ring fills by the used
+  share. Examples: `8% / 100%`, `13 / 100 requests`, `$7.42 / $20.00`,
+  `¥7.43 / ¥100.00`.
+
+Source semantics:
 
 - **window / budget** (subscription quota, postpaid spend) — the ring fills as
   you *consume*. `window` = rate-limit window (5h/week); `budget` = USD spend
   vs a monthly cap.
-- **balance** (prepaid CNY balance on Chinese vendors) — the ring fills like a
-  battery with *remaining* balance. Set `balanceFull.<vendor>` to a typical
-  top-up amount to get a fill level; without it the watch shows the absolute
-  ¥ amount on a grey ring.
+- **balance** (prepaid CNY balance on Chinese vendors) — Rinq converts the
+  remaining balance to used (`balanceFull - remaining`) so it follows the same
+  used/total direction. Set `balanceFull.<vendor>` to the reference top-up.
 
 Credential discovery (`mac/rinq/sources.py`):
 

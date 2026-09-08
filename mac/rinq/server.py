@@ -95,6 +95,9 @@ class Handler(BaseHTTPRequestHandler):
             ok = push_glance(cfg, status["rings"], status["agents"])
             self._send_json(200 if ok else 202, {"pushed": ok})
         elif path == "/config":
+            if self.client_address[0] not in ("127.0.0.1", "::1"):
+                self._send_json(403, {"error": "config changes are local-only"})
+                return
             try:
                 apply_public_settings(cfg, payload)
             except (ValueError, TypeError) as exc:

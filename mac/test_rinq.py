@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import os
 import tempfile
+import threading
 import unittest
+import urllib.error
+import urllib.request
 
 os.environ["RINQ_HOME"] = tempfile.mkdtemp(prefix="rinq-test-")
 # Isolate collector tests from the user's real credentials/network.
@@ -10,6 +13,7 @@ os.environ["RINQ_CCSWITCH_DB"] = os.path.join(os.environ["RINQ_HOME"], "no-ccswi
 os.environ["RINQ_CODEX_AUTH"] = os.path.join(os.environ["RINQ_HOME"], "no-auth.json")
 
 from rinq import collectors, events, focus, sources, state as state_mod  # noqa: E402
+from rinq.server import Handler, ThreadingHTTPServer  # noqa: E402
 
 
 class EventTests(unittest.TestCase):
@@ -85,6 +89,9 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(ring["remainingPercent"], 66)
         self.assertEqual(ring["usedPercent"], 34)
         self.assertEqual(ring["remaining"], 6.6)
+        self.assertEqual(ring["usedValue"], 3.4)
+        self.assertEqual(ring["totalValue"], 10.0)
+        self.assertEqual(ring["valueUnit"], "CNY")
 
     def test_balance_no_reference_shows_unknown_pct(self) -> None:
         ring = collectors._balance_ring(
@@ -95,8 +102,14 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(ring["remaining"], 22.5)
 
     def test_mock_includes_balance_ring(self) -> None:
-        ids = [r["id"] for r in collectors.collect({"collectors": ["mock"]})]
+        rings = collectors.collect({"collectors": ["mock"]})
+        ids = [r["id"] for r in rings]
         self.assertIn("deepseek-balance", ids)
+        for ring in rings:
+            if ring.get("usedValue") is None or ring.get("totalValue") is None:
+                continue
+            expected = state_mod.clamp_pct(ring["usedValue"] / ring["totalValue"] * 100)
+            self.assertEqual(ring["usedPercent"], expected, ring["id"])
 
     def test_collect_dispatch_unknown_name_ignored(self) -> None:
         self.assertEqual(collectors.collect({"collectors": ["nope"]}), [])
@@ -133,6 +146,8 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(rings["minimax-5h"]["resetsAt"], 1788868800)
         self.assertEqual(rings["minimax-week"]["usedPercent"], 13)
         self.assertEqual(rings["minimax-week"]["resetsAt"], 1789315200)
+        self.assertEqual(rings["minimax-week"]["usedValue"], 13)
+        self.assertEqual(rings["minimax-week"]["totalValue"], 100)
 
     def test_codex_parses_rate_limit_windows(self) -> None:
         data = {
@@ -144,8 +159,43 @@ class CollectorTests(unittest.TestCase):
         rings = {r["id"]: r for r in collectors._codex_rings(data)}
         self.assertEqual(rings["codex-5h"]["usedPercent"], 1)
         self.assertEqual(rings["codex-5h"]["windowMins"], 300)
+        self.assertEqual(rings["codex-5h"]["usedValue"], 1)
+        self.assertEqual(rings["codex-5h"]["totalValue"], 100)
         self.assertEqual(rings["codex-week"]["usedPercent"], 0)
         self.assertEqual(rings["codex-week"]["windowMins"], 10080)
+
+
+class ConfigEndpointTests(unittest.TestCase):
+    def test_local_config_update_is_allowed(self) -> None:
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            data = b'{"ringOrder":["codex-week","codex-5h"]}'
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{server.server_address[1]}/config",
+                data=data,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=2) as response:
+                self.assertEqual(response.status, 200)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_remote_config_update_is_rejected(self) -> None:
+        handler = object.__new__(Handler)
+        handler.client_address = ("192.0.2.10", 12345)
+        handler.path = "/config"
+        handler.headers = {"Content-Length": "2"}
+        handler.rfile = type("Reader", (), {"read": lambda self, _: b"{}"})()
+        response = {}
+        handler._send_json = lambda code, body: response.update(code=code, body=body)
+
+        handler.do_POST()
+
+        self.assertEqual(response["code"], 403)
+        self.assertEqual(response["body"]["error"], "config changes are local-only")
 
 
 if __name__ == "__main__":

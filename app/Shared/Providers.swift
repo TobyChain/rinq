@@ -89,7 +89,9 @@ enum TRProviders {
                 remainingPercent: nil, remaining: nil, currency: nil,
                 resetsAt: int(primary["reset_at"]),
                 windowMins: int(primary["limit_window_seconds"]).map { $0 / 60 },
-                accent: "blue", spentUsd: nil, budgetUsd: nil, status: nil))
+                accent: "blue", spentUsd: nil, budgetUsd: nil,
+                usedValue: int(primary["used_percent"]).map(Double.init), totalValue: 100,
+                valueUnit: "percent", status: nil))
         }
         if let secondary = rl["secondary_window"] as? [String: Any] {
             rings.append(TRRing(
@@ -98,7 +100,9 @@ enum TRProviders {
                 remainingPercent: nil, remaining: nil, currency: nil,
                 resetsAt: int(secondary["reset_at"]),
                 windowMins: int(secondary["limit_window_seconds"]).map { $0 / 60 },
-                accent: "indigo", spentUsd: nil, budgetUsd: nil, status: nil))
+                accent: "indigo", spentUsd: nil, budgetUsd: nil,
+                usedValue: int(secondary["used_percent"]).map(Double.init), totalValue: 100,
+                valueUnit: "percent", status: nil))
         }
         return rings
     }
@@ -112,15 +116,25 @@ enum TRProviders {
         guard let general = remains.first(where: { ($0["model_name"] as? String) == "general" }) else { return [] }
         let intervalRemaining = int(general["current_interval_remaining_percent"]) ?? 100
         let weeklyRemaining = int(general["current_weekly_remaining_percent"]) ?? 100
+        let intervalUsed = int(general["current_interval_usage_count"]) ?? 0
+        let intervalTotal = int(general["current_interval_total_count"]) ?? 0
+        let weeklyUsed = int(general["current_weekly_usage_count"]) ?? 0
+        let weeklyTotal = int(general["current_weekly_total_count"]) ?? 0
         return [
             TRRing(id: "minimax-5h", label: "MiniMax 5h", vendor: "minimax", kind: "window",
                    usedPercent: 100 - clamp(intervalRemaining), remainingPercent: nil, remaining: nil, currency: nil,
                    resetsAt: (int(general["end_time"])).map { $0 / 1000 }, windowMins: 300,
-                   accent: "orange", spentUsd: nil, budgetUsd: nil, status: nil),
+                   accent: "orange", spentUsd: nil, budgetUsd: nil,
+                   usedValue: Double(intervalTotal > 0 ? intervalUsed : 100 - intervalRemaining),
+                   totalValue: Double(intervalTotal > 0 ? intervalTotal : 100),
+                   valueUnit: intervalTotal > 0 ? "requests" : "percent", status: nil),
             TRRing(id: "minimax-week", label: "MiniMax week", vendor: "minimax", kind: "window",
                    usedPercent: 100 - clamp(weeklyRemaining), remainingPercent: nil, remaining: nil, currency: nil,
                    resetsAt: (int(general["weekly_end_time"])).map { $0 / 1000 }, windowMins: 10080,
-                   accent: "red", spentUsd: nil, budgetUsd: nil, status: nil),
+                   accent: "red", spentUsd: nil, budgetUsd: nil,
+                   usedValue: Double(weeklyTotal > 0 ? weeklyUsed : 100 - weeklyRemaining),
+                   totalValue: Double(weeklyTotal > 0 ? weeklyTotal : 100),
+                   valueUnit: weeklyTotal > 0 ? "requests" : "percent", status: nil),
         ]
     }
 
@@ -132,10 +146,14 @@ enum TRProviders {
         let infos = (json["balance_infos"] as? [[String: Any]]) ?? []
         let cny = infos.first(where: { ($0["currency"] as? String) == "CNY" }) ?? infos.first
         guard let balance = double(cny?["total_balance"]) else { return [] }
+        let full = 100.0
+        let used = max(0, full - balance)
         return [TRRing(id: "deepseek-balance", label: "DeepSeek", vendor: "deepseek", kind: "balance",
-                       usedPercent: nil, remainingPercent: nil, remaining: balance, currency: "CNY",
+                       usedPercent: clamp(Int(used / full * 100)), remainingPercent: clamp(Int(balance / full * 100)),
+                       remaining: balance, currency: "CNY",
                        resetsAt: nil, windowMins: nil, accent: "teal",
-                       spentUsd: nil, budgetUsd: nil, status: nil)]
+                       spentUsd: nil, budgetUsd: nil, usedValue: used, totalValue: full,
+                       valueUnit: "CNY", status: nil)]
     }
 
     // MARK: - Moonshot / Kimi (best effort)
@@ -145,10 +163,14 @@ enum TRProviders {
                                       headers: ["Authorization": "Bearer \(key)"]) else { return [] }
         let d = (json["data"] as? [String: Any]) ?? json
         guard let balance = double(d["available_balance"] ?? d["balance"] ?? d["total_balance"]) else { return [] }
+        let full = 100.0
+        let used = max(0, full - balance)
         return [TRRing(id: "moonshot-balance", label: "Kimi", vendor: "moonshot", kind: "balance",
-                       usedPercent: nil, remainingPercent: nil, remaining: balance, currency: "CNY",
+                       usedPercent: clamp(Int(used / full * 100)), remainingPercent: clamp(Int(balance / full * 100)),
+                       remaining: balance, currency: "CNY",
                        resetsAt: nil, windowMins: nil, accent: "purple",
-                       spentUsd: nil, budgetUsd: nil, status: nil)]
+                       spentUsd: nil, budgetUsd: nil, usedValue: used, totalValue: full,
+                       valueUnit: "CNY", status: nil)]
     }
 
     // MARK: - Zhipu / GLM (best effort)
@@ -158,15 +180,20 @@ enum TRProviders {
                                       headers: ["Authorization": "Bearer \(key)"]) else { return [] }
         let d = (json["data"] as? [String: Any]) ?? json
         guard let balance = double(d["balance"] ?? d["available_balance"] ?? d["total_balance"]) else { return [] }
+        let full = 100.0
+        let used = max(0, full - balance)
         return [TRRing(id: "zhipu-balance", label: "GLM", vendor: "zhipu", kind: "balance",
-                       usedPercent: nil, remainingPercent: nil, remaining: balance, currency: "CNY",
+                       usedPercent: clamp(Int(used / full * 100)), remainingPercent: clamp(Int(balance / full * 100)),
+                       remaining: balance, currency: "CNY",
                        resetsAt: nil, windowMins: nil, accent: "red",
-                       spentUsd: nil, budgetUsd: nil, status: nil)]
+                       spentUsd: nil, budgetUsd: nil, usedValue: used, totalValue: full,
+                       valueUnit: "CNY", status: nil)]
     }
 
     // MARK: - OpenAI admin spend (best effort; sums month-to-date USD)
 
     private static func fetchOpenAISpend(key: String) async -> [TRRing] {
+        let monthlyBudget = 20.0
         let now = Date()
         let start = Calendar(identifier: .gregorian).date(from: Calendar(identifier: .gregorian)
             .dateComponents([.year, .month], from: now)) ?? now
@@ -183,9 +210,12 @@ enum TRProviders {
             }
         }
         return [TRRing(id: "openai-api", label: "OpenAI API", vendor: "openai", kind: "budget",
-                       usedPercent: nil, remainingPercent: nil, remaining: nil, currency: "USD",
+                       usedPercent: clamp(Int(spent / monthlyBudget * 100)),
+                       remainingPercent: clamp(Int(max(0, monthlyBudget - spent) / monthlyBudget * 100)),
+                       remaining: nil, currency: "USD",
                        resetsAt: nil, windowMins: nil, accent: "green",
-                       spentUsd: spent, budgetUsd: nil, status: nil)]
+                       spentUsd: spent, budgetUsd: monthlyBudget, usedValue: spent, totalValue: monthlyBudget,
+                       valueUnit: "USD", status: nil)]
     }
 
     private static func clamp(_ v: Int) -> Int { min(100, max(0, v)) }

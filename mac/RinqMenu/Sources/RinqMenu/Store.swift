@@ -25,10 +25,6 @@ final class Store: ObservableObject {
 
     func setDraft(_ id: String, _ v: String) { drafts[id] = v }
 
-    func vendor(_ id: String) -> VendorInfo? {
-        settings?.vendors.first { $0.id == id }
-    }
-
     func toggle(_ vendor: VendorInfo) async {
         await patch([
             "enabled": Dictionary(uniqueKeysWithValues: settings!.vendors.map {
@@ -50,13 +46,7 @@ final class Store: ObservableObject {
         await patch(["keys": [id: ""]])
     }
 
-    func moveRing(id ringId: String, direction: Int) async {
-        guard let rings = status?.rings else { return }
-        var ids = rings.map(\.id)
-        guard let idx = ids.firstIndex(of: ringId) else { return }
-        let target = idx + direction
-        guard target >= 0, target < ids.count else { return }
-        ids.swapAt(idx, target)
+    func saveRingOrder(_ ids: [String]) async {
         await patch(["ringOrder": ids])
     }
 

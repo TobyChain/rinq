@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeOpaque(_ view: NSView) {
         for sub in view.subviews {
-            if let vfx = sub as? NSVisualEffectView? ?? (sub is NSVisualEffectView ? sub : nil) as? NSVisualEffectView {
+            if let vfx = sub as? NSVisualEffectView {
                 vfx.material = .windowBackground
                 vfx.blendingMode = .withinWindow
                 vfx.state = .inactive
@@ -75,12 +75,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let pcts = rings.map { pct($0) }
         item.button?.image = Self.ringImage(pcts: pcts)
         item.button?.image?.isTemplate = false
-        item.button?.toolTip = rings.map { "\($0.label): \(pct($0))%" }.joined(separator: "\n")
+        item.button?.toolTip = rings.map { "\($0.label): \($0.usageText)" }.joined(separator: "\n")
     }
 
     private func pct(_ r: Ring) -> Int {
-        if r.kind == "balance" { return r.remainingPercent ?? r.usedPercent ?? 0 }
-        return r.usedPercent ?? 0
+        r.fillPercent
     }
 
     static func ringImage(pcts: [Int]) -> NSImage {

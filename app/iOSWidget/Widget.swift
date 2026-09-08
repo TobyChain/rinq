@@ -62,10 +62,7 @@ struct RinqWidgetView: View {
     }
 
     private func valueText(_ ring: TRRing) -> String {
-        if ring.kind == "balance", let rem = ring.remaining {
-            return "\((ring.currency == "USD") ? "$" : "¥")\(String(format: "%.0f", rem))"
-        }
-        return "\(ring.usedPercent ?? 0)%"
+        ring.usageText
     }
 }
 

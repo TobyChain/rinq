@@ -14,6 +14,9 @@ the complication. All timestamps are Unix epoch seconds.
       "vendor": "codex",
       "kind": "window",
       "usedPercent": 68,
+      "usedValue": 68,
+      "totalValue": 100,
+      "valueUnit": "percent",
       "resetsAt": 1757303000,
       "windowMins": 300,
       "accent": "blue"
@@ -24,6 +27,9 @@ the complication. All timestamps are Unix epoch seconds.
       "vendor": "deepseek",
       "kind": "balance",
       "usedPercent": 34,
+      "usedValue": 3.38,
+      "totalValue": 10.0,
+      "valueUnit": "CNY",
       "remaining": 6.62,
       "currency": "CNY",
       "accent": "teal"
@@ -34,6 +40,9 @@ the complication. All timestamps are Unix epoch seconds.
       "vendor": "openai",
       "kind": "budget",
       "usedPercent": 37,
+      "usedValue": 7.42,
+      "totalValue": 20.0,
+      "valueUnit": "USD",
       "spentUsd": 7.42,
       "budgetUsd": 20.0,
       "resetsAt": 1759737600,
@@ -50,6 +59,10 @@ the complication. All timestamps are Unix epoch seconds.
 ```
 
 ## Ring kinds
+
+All user-facing quota values use `usedValue / totalValue`. `valueUnit` is
+`percent`, `requests`, `USD`, or `CNY`; views format it consistently.
+`usedPercent` remains the normalized 0..100 fill used to draw the ring.
 
 - `window` — a rate-limit window (5h, weekly). `resetsAt` is the next reset.
   `usedPercent` = quota consumed.
@@ -77,12 +90,12 @@ the complication. All timestamps are Unix epoch seconds.
 | `openai` | `OPENAI_ADMIN_KEY` | `/v1/organization/costs` | budget | route+shape |
 | `deepseek` | `DEEPSEEK_API_KEY` | `api.deepseek.com/user/balance` | balance | route (401), shape per docs |
 | `moonshot` (Kimi) | `MOONSHOT_API_KEY` | `api.moonshot.cn/v1/users/me/balance` | balance | route (401), shape best-effort |
-| `zhipu` (GLM) | `ZHIPU_API_KEY` | `open.bigmodel.cn/api/paas/v4/...` | balance | route (401), shape best-effort |
-| `minimax` | `MINIMAX_API_KEY` | no public balance route | balance | stub → unknown |
+| `zhipu` (GLM) | `ZHIPU_API_KEY` | `open.bigmodel.cn/api/monitor/usage/quota/limit` | balance | route (401), shape best-effort |
+| `minimax` | `MINIMAX_API_KEY` | `api.minimaxi.com/v1/api/openplatform/coding_plan/remains` | window | live 5h/week |
 | `xiaomi` (MiMo) | `XIAOMI_API_KEY` | no confirmed public route | balance | stub → unknown |
 | `anthropic` (Claude) | `ANTHROPIC_ADMIN_KEY` | Admin Usage & Cost API (org only) | budget | interface only |
 
 "route (401)" means the endpoint exists and is auth-gated (probed without a
 real key); field parsing follows each vendor's published docs and degrades to
-`unknown` if the response shape differs. `codex` 5h/week comes from the Codex
-app-server `account/rateLimits/read`, not an HTTP key.
+`unknown` if the response shape differs. `codex` 5h/week comes from the local
+Codex ChatGPT login and the `chatgpt.com/backend-api/wham/usage` endpoint.

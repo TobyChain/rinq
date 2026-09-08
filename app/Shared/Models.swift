@@ -30,6 +30,9 @@ struct TRRing: Codable, Identifiable {
     var accent: String?
     var spentUsd: Double?
     var budgetUsd: Double?
+    var usedValue: Double? = nil
+    var totalValue: Double? = nil
+    var valueUnit: String? = nil
     var status: String?
 }
 
@@ -44,6 +47,29 @@ enum TRPalette {
         case "purple": return .purple
         case "teal": return .teal
         default: return .blue
+        }
+    }
+}
+
+extension TRRing {
+    var fillPercent: Int { usedPercent ?? 0 }
+
+    var usageText: String {
+        guard let usedValue, let totalValue else {
+            return "\(fillPercent)% / 100%"
+        }
+        return "\(formatValue(usedValue)) / \(formatValue(totalValue))"
+    }
+
+    private func formatValue(_ value: Double) -> String {
+        let number = value.rounded() == value
+            ? String(format: "%.0f", value)
+            : String(format: "%.2f", value)
+        switch valueUnit {
+        case "USD": return "$\(number)"
+        case "CNY": return "¥\(number)"
+        case "percent": return "\(number)%"
+        default: return number
         }
     }
 }

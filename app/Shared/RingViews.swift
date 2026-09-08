@@ -7,8 +7,7 @@ struct RingView: View {
     var diameter: CGFloat? = nil
 
     private var pct: Int? {
-        if ring.kind == "balance" { return ring.remainingPercent ?? ring.usedPercent }
-        return ring.usedPercent
+        ring.usedPercent
     }
 
     private var fraction: Double {
@@ -46,13 +45,14 @@ struct RingStackView: View {
     var outerDiameter: CGFloat = 96
 
     var body: some View {
-        let shown = Array(rings.prefix(3))
-        let gap: CGFloat = 9
-        let lineWidth: CGFloat = 6
+        let shown = rings
+        let count = max(shown.count, 1)
+        let lineWidth = min(6, (outerDiameter - 14) / (CGFloat(count) * 2.3))
+        let gap = min(9, max(2, lineWidth * 0.8))
         return ZStack {
             ForEach(Array(shown.enumerated()), id: \.element.id) { idx, ring in
                 RingView(ring: ring, lineWidth: lineWidth, showCenter: false,
-                         diameter: outerDiameter - CGFloat(idx) * 2 * (lineWidth + gap))
+                         diameter: max(lineWidth * 2, outerDiameter - CGFloat(idx) * 2 * (lineWidth + gap)))
             }
         }
         .frame(width: outerDiameter, height: outerDiameter)
@@ -63,20 +63,19 @@ struct BarRow: View {
     let ring: TRRing
 
     private var isBalance: Bool { ring.kind == "balance" }
-    private var pct: Int? { isBalance ? (ring.remainingPercent ?? ring.usedPercent) : ring.usedPercent }
+    private var pct: Int? { ring.usedPercent }
     private var unknown: Bool { pct == nil || ring.status == "unknown" }
     private var fraction: CGFloat {
         guard let p = pct else { return 0 }
         return CGFloat(min(max(p, 0), 100)) / 100.0
     }
-    private var symbol: String { (ring.currency == "USD") ? "$" : "¥" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(ring.label).font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Text(pct == nil ? "--" : "\(pct ?? 0)%")
+                Text(unknown ? "--" : ring.usageText)
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(unknown ? .secondary : TRPalette.color(ring.accent))
             }
@@ -97,15 +96,9 @@ struct BarRow: View {
             if isBalance { return "paste key to show" }
             return "no data"
         }
-        if isBalance, let rem = ring.remaining {
-            return "\(symbol)\(String(format: "%.2f", rem)) left"
-        }
-        if ring.kind == "budget", let spent = ring.spentUsd {
-            return "$\(String(format: "%.2f", spent)) spent this month"
-        }
         if let reset = ring.resetsAt {
             let secs = Date(timeIntervalSince1970: TimeInterval(reset)).timeIntervalSinceNow
-            if secs <= 0 { return "\(ring.usedPercent ?? 0)% used" }
+            if secs <= 0 { return "quota window ended" }
             let mins = Int(secs / 60)
             if mins >= 1440 { return "resets in \(mins / 1440)d" }
             if mins >= 60 { return "resets in \(mins / 60)h \(mins % 60)m" }
@@ -113,4 +106,5 @@ struct BarRow: View {
         }
         return "\(ring.usedPercent ?? 0)%"
     }
+
 }

@@ -8,7 +8,8 @@ let package = Package(
         .executableTarget(
             name: "RinqMenu",
             path: "Sources/RinqMenu",
-            linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("WebKit")]
-        )
+            linkerSettings: [.linkedFramework("AppKit")]
+        ),
+        .testTarget(name: "RinqMenuTests", dependencies: ["RinqMenu"])
     ]
 )

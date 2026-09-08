@@ -49,11 +49,11 @@ HTML = """<!doctype html>
 <script>
 const COLORS = { blue:'#0a84ff', indigo:'#5e5ce6', green:'#30d158', orange:'#ff9f0a', red:'#ff453a', purple:'#bf5af2', teal:'#64d2ff' };
 function col(a){ return COLORS[a] || COLORS.blue; }
-function pctOf(r){ if(r.kind==='balance') return r.remainingPercent ?? r.usedPercent; return r.usedPercent; }
+function pctOf(r){ return r.usedPercent; }
 function sym(r){ return r.currency==='USD' ? '$' : '¥'; }
 function amount(r){ return (r.remaining!=null) ? (sym(r)+Number(r.remaining).toFixed(2)) : null; }
 // Unknown only when neither a percentage nor an absolute amount is available.
-function unknown(r){ return (pctOf(r)===null || pctOf(r)===undefined) && !amount(r) && r.status!=='unknown' ? false : (pctOf(r)==null && !amount(r)); }
+function unknown(r){ return pctOf(r)==null && !amount(r); }
 function arc(radius, pct, color, width){
   const c=2*Math.PI*radius, dash=c*Math.max(0,Math.min(100,pct||0))/100;
   return `<circle cx="130" cy="130" r="${radius}" fill="none" stroke="${color}" stroke-opacity="0.18" stroke-width="${width}"/>
@@ -61,18 +61,28 @@ function arc(radius, pct, color, width){
             stroke-linecap="round" stroke-dasharray="${dash} ${c}"/>`;
 }
 function resetText(r){
-  if(amount(r) && pctOf(r)==null) return amount(r)+' left';
   if(r.resetsAt){
     const s=r.resetsAt - Math.floor(Date.now()/1000);
-    if(s<=0) return (r.usedPercent??0)+'% used';
+    if(s<=0) return 'quota window ended';
     const m=Math.floor(s/60);
     if(m>=1440) return 'resets in '+Math.floor(m/1440)+'d';
     if(m>=60) return 'resets in '+Math.floor(m/60)+'h '+(m%60)+'m';
     return 'resets in '+m+'m';
   }
-  if(r.kind==='balance' && r.remaining!=null) return sym(r)+Number(r.remaining).toFixed(2)+' left';
-  if(r.kind==='budget' && r.spentUsd!=null) return '$'+Number(r.spentUsd).toFixed(2)+' spent this month';
   return (r.usedPercent??0)+'%';
+}
+function formatValue(value, unit){
+  const n = Number(value);
+  const text = Number.isInteger(n) ? String(n) : n.toFixed(2);
+  if(unit==='USD') return '$'+text;
+  if(unit==='CNY') return '¥'+text;
+  if(unit==='percent') return text+'%';
+  return text;
+}
+function usageText(r){
+  if(r.usedValue!=null && r.totalValue!=null)
+    return formatValue(r.usedValue,r.valueUnit)+' / '+formatValue(r.totalValue,r.valueUnit);
+  return (r.usedPercent??0)+'% / 100%';
 }
 async function load(){
   try{
@@ -100,7 +110,7 @@ function bars(rings){
     const p = pctOf(r);
     const hasPct = (p!=null);
     const amt = amount(r);
-    const v = hasPct ? (p+'%') : (amt || '--');
+    const v = hasPct ? usageText(r) : (amt || '--');
     const dead = !hasPct && !amt;
     const c = dead ? '#888' : col(r.accent);
     return `<div class="bar">

@@ -26,8 +26,7 @@ struct RingArc: View {
     let lineWidth: CGFloat
 
     private var pct: Int {
-        if ring.kind == "balance" { return ring.remainingPercent ?? ring.usedPercent ?? 0 }
-        return ring.usedPercent ?? 0
+        ring.fillPercent
     }
 
     var body: some View {
@@ -45,9 +44,7 @@ struct RingArc: View {
 struct BarRow: View {
     let ring: Ring
 
-    private var isBalance: Bool { ring.kind == "balance" }
-    private var pct: Int { isBalance ? (ring.remainingPercent ?? ring.usedPercent ?? 0) : (ring.usedPercent ?? 0) }
-    private var symbol: String { ring.currency == "USD" ? "$" : "¥" }
+    private var pct: Int { ring.usedPercent ?? 0 }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -57,7 +54,7 @@ struct BarRow: View {
                 HStack {
                     Text(ring.label).font(.system(size: 13, weight: .semibold))
                     Spacer()
-                    Text(headline).font(.system(size: 13, weight: .bold, design: .rounded))
+                    Text(ring.usageText).font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundStyle(Palette.color(ring.accent))
                 }
                 GeometryReader { geo in
@@ -73,17 +70,10 @@ struct BarRow: View {
         }
     }
 
-    private var headline: String {
-        if isBalance, let rem = ring.remaining { return "\(symbol)\(String(format: "%.0f", rem))" }
-        return "\(pct)%"
-    }
-
     private var detail: String {
-        if isBalance, let rem = ring.remaining { return "\(symbol)\(String(format: "%.2f", rem)) left" }
-        if ring.kind == "budget", let spent = ring.spentUsd { return "$\(String(format: "%.2f", spent)) spent" }
         if let reset = ring.resetsAt {
             let s = Double(reset) - Date().timeIntervalSince1970
-            if s <= 0 { return "\(ring.usedPercent ?? 0)% used" }
+            if s <= 0 { return "quota window ended" }
             let m = Int(s / 60)
             if m >= 1440 { return "resets in \(m / 1440)d" }
             if m >= 60 { return "resets in \(m / 60)h \(m % 60)m" }

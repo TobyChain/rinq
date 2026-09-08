@@ -42,43 +42,38 @@ struct SettingsView: View {
     @ObservedObject var store: Store
 
     var body: some View {
-        Form {
-            Section("Providers") {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                GroupBox("Providers") {
+                    VStack(spacing: 0) {
                 if let vendors = store.settings?.vendors {
                     ForEach(vendors) { v in
                         ProviderRow(store: store, vendor: v)
+                            .padding(.vertical, 5)
+                        if v.id != vendors.last?.id { Divider() }
                     }
                 } else {
-                    Text("Connecting to rinq daemon…").foregroundStyle(.secondary)
-                }
-            }
-            Section("Ring order") {
-                if let rings = store.status?.rings, !rings.isEmpty {
-                    Text("Use the arrows to reorder. Rings and the menu icon update immediately.")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
-                    ForEach(Array(rings.enumerated()), id: \.element.id) { idx, ring in
-                        HStack(spacing: 8) {
-                            Circle().fill(Palette.color(ring.accent)).frame(width: 9, height: 9)
-                            Text(ring.label).font(.system(size: 12))
-                            Spacer()
-                            Button {
-                                Task { await store.moveRing(id: ring.id, direction: -1) }
-                            } label: { Image(systemName: "chevron.up") }
-                                .buttonStyle(.borderless).disabled(idx == 0)
-                            Button {
-                                Task { await store.moveRing(id: ring.id, direction: 1) }
-                            } label: { Image(systemName: "chevron.down") }
-                                .buttonStyle(.borderless).disabled(idx == rings.count - 1)
+                            Text("Connecting to rinq daemon…")
+                                .foregroundStyle(.secondary)
+                                .padding(8)
                         }
-                        .padding(.vertical, 2)
                     }
-                } else {
-                    Text("No active rings — add a provider key.").font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                }
+
+                GroupBox("Ring order") {
+                    if let rings = store.status?.rings, !rings.isEmpty {
+                        RingOrderView(store: store, rings: rings)
+                            .padding(.vertical, 4)
+                    } else {
+                        Text("No active rings — add a provider key.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .padding(8)
+                    }
                 }
             }
+            .padding(12)
         }
-        .formStyle(.grouped)
         .frame(maxWidth: .infinity)
     }
 }
@@ -86,7 +81,6 @@ struct SettingsView: View {
 struct ProviderRow: View {
     @ObservedObject var store: Store
     let vendor: VendorInfo
-    @State private var showKey = false
     @State private var expanded = false
 
     var body: some View {
