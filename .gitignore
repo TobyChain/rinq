@@ -1,6 +1,6 @@
-watch/build/
-watch/Rinq.xcodeproj/
-watch/DerivedData/
+app/build/
+app/*.xcodeproj/
+app/DerivedData/
 mac/__pycache__/
 **/__pycache__/
 .pytest_cache/

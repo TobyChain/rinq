@@ -1,77 +1,83 @@
 # Rinq
 
-Turn an Apple Watch into a glanceable "token battery" dashboard. Like the
-Activity rings, but each ring is an AI vendor quota (5h window, weekly window,
-API spend budget). When you take the watch off and set it on its charger, it
-becomes a desktop status board for the AI work running on your Mac.
+A glanceable "token battery" for AI quota, like the Activity rings but each
+ring is a vendor limit (5h window, weekly window, prepaid balance, spend
+budget). It runs as a **standalone iOS app + home/lock-screen widget** and a
+**watchOS app + complication** — no Mac required: the app fetches each vendor
+directly. Keys are entered once on the iPhone and stay on device in the App
+Group container.
 
 ```
-Mac collector (this repo)  --HTTPS/JSON-->  watchOS app + WidgetKit rings
-   hooks (TraeX/Codex)  ------------------->  push notifications (APNs)
+iPhone app / widgets  ──direct HTTPS──►  vendor quota endpoints
+Apple Watch app/complication  (same code, same keys, each fetches directly)
 ```
 
-## What works in this scaffold
+An optional Mac collector (`mac/`) also exists as a local relay that can read
+cc-switch and the Codex ChatGPT login, but the phone/watch app does not depend
+on it.
 
-- `rinq` Mac CLI/daemon (Python 3, stdlib only):
-  - aggregates quota rings + agent events into one status document
-  - local HTTP server serves the status JSON
-  - hook ingestion for TraeX (`Stop`/`Notification`) and Codex (`notify`)
-  - break/focus timer (50/10)
-  - collectors: `mock` (on by default), `openai` (real `/organization/costs`),
-    `codex` and `anthropic` are stubbed with a documented interface
-- watchOS app + WidgetKit ring complication (XcodeGen project), builds for the
-  watch simulator. Reads a status endpoint, falls back to bundled sample data.
+## The apps (standalone, recommended)
 
-## Hard constraints this design respects
-
-- macOS cannot push to a watch over Bluetooth. `WatchConnectivity` is
-  iPhone<->watch only; watchOS bans background BLE data streams. Transport is
-  HTTPS (status pull) + APNs (event push). The watch polls for rings; events
-  are pushed.
-- A custom app cannot stay always-on while charging. Rings live in the
-  **watch face complication**, not a foreground app. Turn off
-  `Settings > General > Nightstand Mode` so the watch face shows on the charger.
-- There is no "download a .app from GitHub" for watchOS. Distribution is
-  TestFlight/App Store (paid account) or Xcode sideload (7-day, free). This
-  repo makes the **Mac** side one-command; the watch build is `make watch-build`.
-
-## Quick start (Mac side)
+Build the Xcode project (XcodeGen) and run on the iOS simulator:
 
 ```bash
-cd rinq
-./install.sh              # installs rinq CLI + launchd agent + hooks
-rinq status          # print current aggregated status
-rinq serve           # run the local HTTP API (launchd does this for you)
-rinq push --state completed --title "build passed"
-rinq break           # show focus/break countdown
+make ios-build      # build iOS app + widget for the simulator
+make ios-sim        # boot an iPhone simulator, install, and launch
+make watch-build    # build the watchOS app + complication
 ```
 
-The daemon listens on `127.0.0.1:7788`:
+On first launch open Settings (key icon), enable a vendor and paste its key:
 
-- `GET  /status`                aggregated rings + events
-- `POST /event`                hook ingestion `{source,state,title,detail}`
-- `POST /mock`                 feed a fake status (watch simulator testing)
+- **DeepSeek / MiniMax / Kimi / GLM**: paste the provider API key.
+- **OpenAI spend**: paste an Admin key.
+- **ChatGPT / Codex (experimental)**: paste a ChatGPT access token. This uses
+  the unofficial `chatgpt.com/backend-api/wham/usage` endpoint with your own
+  account. It works when you self-build/sideload, but is **not App-Store
+  eligible** and may break if OpenAI changes the endpoint. Disabled by default.
 
-## Watch side
+Widgets refresh on the system schedule (~15 min). The watch app and
+complication use the same provider code; keys entered on the iPhone are stored
+in the App Group and shared with the iOS widget extension. (Cross-device
+sharing to the watch uses iCloud Keychain when you enable the entitlement with
+a paid team; otherwise enter keys on each device.)
 
-```bash
-make watch-generate         # xcodegen
-make watch-build            # build for watch simulator
-make watch-sim              # boot simulator + install + launch
-```
+### On-device widget providers
 
-Point the app at your Mac's status URL (or the relay URL once deployed). On the
-simulator it uses bundled sample data so the rings render with zero setup.
+| provider | endpoint | kind |
+| --- | --- | --- |
+| ChatGPT/Codex | `chatgpt.com/backend-api/wham/usage` | 5h + week windows |
+| MiniMax | `api.minimaxi.com/v1/api/openplatform/coding_plan/remains` | 5h + week windows |
+| DeepSeek | `api.deepseek.com/user/balance` | CNY balance |
+| Kimi (Moonshot) | `api.moonshot.cn/v1/users/me/balance` | CNY balance |
+| GLM (Zhipu) | `open.bigmodel.cn/api/monitor/usage/quota/limit` | CNY balance |
+| OpenAI | `api.openai.com/v1/organization/costs` | monthly USD spend |
+
+## Distribution
+
+There is no "download a .app from GitHub" for iOS/watchOS. This repo is
+**source-only**: clone, open `app/Rinq.xcodeproj` (generated by XcodeGen), set
+your team, and build to your own devices.
+
+- Free Apple ID: sideload via Xcode, re-signs every 7 days; no push.
+- Paid Apple Developer Program: set `DEVELOPMENT_TEAM` in `app/project.yml`,
+  `make ios-generate`, build to device; signatures last a year.
+- App Store: the official-API providers are fine; the ChatGPT experimental
+  ring must not be included in an App Store build (unofficial endpoint).
 
 ## Layout
 
 ```
-mac/rinq/      Mac CLI, collectors, HTTP server, hooks
-watch/             watchOS app + WidgetKit ring widget (XcodeGen)
-schema/            shared status JSON schema
+app/Shared/     Swift models, ring views, settings, vendor providers
+app/iOS/        iPhone app (rings + provider settings)
+app/iOSWidget/  home-screen + lock-screen widget
+app/Watch/      watchOS app
+app/WatchWidget/ watch complication
+mac/rinq/       optional Mac CLI/daemon (relay, hooks, cc-switch reading)
+schema/         status JSON contract
 ```
 
 See `schema/status.md` for the ring/event contract.
+
 
 ## Hooking agents
 

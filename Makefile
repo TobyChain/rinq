@@ -1,20 +1,35 @@
-.PHONY: watch-generate watch-build watch-sim mac-test install
+.PHONY: ios-generate ios-build ios-sim watch-generate watch-build mac-test install
 
+# ---- iOS app + home/lock-screen widget (standalone, no Mac) -------------
+ios-generate:
+	cd app && xcodegen generate
+
+ios-build: ios-generate
+	cd app && xcodebuild \
+		-project Rinq.xcodeproj \
+		-scheme RinqApp \
+		-configuration Debug \
+		-destination 'generic/platform=iOS Simulator' \
+		CODE_SIGNING_ALLOWED=NO \
+		build
+
+ios-sim:
+	cd app && ./scripts/ios-sim.sh
+
+# ---- watchOS app + complication ------------------------------------------
 watch-generate:
-	cd watch && xcodegen generate
+	cd app && xcodegen generate
 
 watch-build: watch-generate
-	cd watch && xcodebuild \
+	cd app && xcodebuild \
 		-project Rinq.xcodeproj \
-		-scheme RinqWatch \
+		-scheme RinqWatchApp \
 		-configuration Debug \
 		-destination 'generic/platform=watchOS Simulator' \
 		CODE_SIGNING_ALLOWED=NO \
 		build
 
-watch-sim: watch-generate
-	@watch/scripts/sim.sh
-
+# ---- Mac collector (optional local relay/daemon) -------------------------
 mac-test:
 	cd mac && python3 -m unittest test_rinq -v
 
