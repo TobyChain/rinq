@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "updatedAt": 1757300000,
+  "rings": [
+    {
+      "id": "codex-5h",
+      "label": "Codex 5h",
+      "vendor": "codex",
+      "kind": "window",
+      "usedPercent": 68,
+      "resetsAt": 1757310560,
+      "windowMins": 300,
+      "accent": "blue"
+    },
+    {
+      "id": "codex-week",
+      "label": "Codex week",
+      "vendor": "codex",
+      "kind": "window",
+      "usedPercent": 42,
+      "resetsAt": 1757836800,
+      "windowMins": 10080,
+      "accent": "indigo"
+    },
+    {
+      "id": "openai-api",
+      "label": "OpenAI API",
+      "vendor": "openai",
+      "kind": "budget",
+      "usedPercent": 37,
+      "remainingPercent": 63,
+      "spentUsd": 7.42,
+      "budgetUsd": 20.0,
+      "resetsAt": 1759737600,
+      "windowMins": 43200,
+      "accent": "green"
+    },
+    {
+      "id": "anthropic-api",
+      "label": "Claude API",
+      "vendor": "anthropic",
+      "kind": "budget",
+      "usedPercent": null,
+      "remainingPercent": null,
+      "status": "unknown",
+      "budgetUsd": 20.0,
+      "accent": "orange"
+    },
+    {
+      "id": "deepseek-balance",
+      "label": "DeepSeek",
+      "vendor": "deepseek",
+      "kind": "balance",
+      "usedPercent": 34,
+      "remainingPercent": 66,
+      "remaining": 13.2,
+      "currency": "CNY",
+      "accent": "teal"
+    },
+    {
+      "id": "moonshot-balance",
+      "label": "Kimi",
+      "vendor": "moonshot",
+      "kind": "balance",
+      "usedPercent": 55,
+      "remainingPercent": 45,
+      "remaining": 22.5,
+      "currency": "CNY",
+      "accent": "purple"
+    },
+    {
+      "id": "zhipu-balance",
+      "label": "GLM",
+      "vendor": "zhipu",
+      "kind": "balance",
+      "usedPercent": 70,
+      "remainingPercent": 30,
+      "remaining": 15.0,
+      "currency": "CNY",
+      "accent": "red"
+    },
+    {
+      "id": "minimax-5h",
+      "label": "MiniMax 5h",
+      "vendor": "minimax",
+      "kind": "window",
+      "usedPercent": 0,
+      "resetsAt": 1757303000,
+      "windowMins": 300,
+      "accent": "orange"
+    },
+    {
+      "id": "minimax-week",
+      "label": "MiniMax week",
+      "vendor": "minimax",
+      "kind": "window",
+      "usedPercent": 13,
+      "resetsAt": 1757836800,
+      "windowMins": 10080,
+      "accent": "red"
+    },
+    {
+      "id": "xiaomi-balance",
+      "label": "MiMo",
+      "vendor": "xiaomi",
+      "kind": "balance",
+      "usedPercent": null,
+      "remainingPercent": null,
+      "status": "unknown",
+      "currency": "CNY",
+      "accent": "orange"
+    }
+  ],
+  "agents": {
+    "running": 1,
+    "waiting": 0,
+    "doneToday": 2,
+    "failedToday": 0,
+    "lastEvent": { "state": "completed", "title": "build passed", "at": 1757300000 }
+  },
+  "focus": { "mode": "focus", "remainingMins": 31, "breakEveryMins": 50 }
+}

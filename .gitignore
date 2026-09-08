@@ -1,0 +1,7 @@
+watch/build/
+watch/Rinq.xcodeproj/
+watch/DerivedData/
+mac/__pycache__/
+**/__pycache__/
+.pytest_cache/
+.DS_Store

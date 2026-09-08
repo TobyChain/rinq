@@ -1,0 +1,141 @@
+from __future__ import annotations
+
+import os
+import tempfile
+import unittest
+
+os.environ["RINQ_HOME"] = tempfile.mkdtemp(prefix="rinq-test-")
+# Isolate collector tests from the user's real credentials/network.
+os.environ["RINQ_CCSWITCH_DB"] = os.path.join(os.environ["RINQ_HOME"], "no-ccswitch.db")
+os.environ["RINQ_CODEX_AUTH"] = os.path.join(os.environ["RINQ_HOME"], "no-auth.json")
+
+from rinq import collectors, events, focus, sources, state as state_mod  # noqa: E402
+
+
+class EventTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.cfg = {"push": {}}
+
+    def test_lifecycle_counts(self) -> None:
+        s = state_mod.blank_state()
+        events.apply_event(s, {"state": "started", "title": "t1"}, self.cfg)
+        events.apply_event(s, {"state": "waiting", "title": "t1"}, self.cfg)
+        events.apply_event(s, {"state": "completed", "title": "t1"}, self.cfg)
+        a = s["agents"]
+        self.assertEqual(a["running"], 0)
+        self.assertEqual(a["waiting"], 0)
+        self.assertEqual(a["doneToday"], 1)
+        self.assertEqual(a["failedToday"], 0)
+
+    def test_failed_counts_and_clears_waiting(self) -> None:
+        s = state_mod.blank_state()
+        events.apply_event(s, {"state": "started", "title": "t"}, self.cfg)
+        events.apply_event(s, {"state": "failed", "title": "t"}, self.cfg)
+        self.assertEqual(s["agents"]["running"], 0)
+        self.assertEqual(s["agents"]["failedToday"], 1)
+
+    def test_invalid_state(self) -> None:
+        s = state_mod.blank_state()
+        with self.assertRaises(ValueError):
+            events.apply_event(s, {"state": "nope", "title": "x"}, self.cfg)
+
+    def test_focus_countdown(self) -> None:
+        s = state_mod.blank_state()
+        focus.start_focus(s)
+        cfg = {"focus": {"breakEveryMins": 50}}
+        f = focus.current_focus(s, cfg)
+        self.assertEqual(f["mode"], "focus")
+        self.assertLessEqual(f["remainingMins"], 50)
+
+    def test_clamp(self) -> None:
+        self.assertEqual(state_mod.clamp_pct(140), 100)
+        self.assertEqual(state_mod.clamp_pct(-5), 0)
+        self.assertIsNone(state_mod.clamp_pct(None))
+
+
+class CollectorTests(unittest.TestCase):
+    def test_unknown_when_no_key(self) -> None:
+        import os
+        os.environ.pop("DEEPSEEK_API_KEY", None)
+        cfg = {"balanceFull": {"deepseek": 20.0}}
+        ring = collectors._deepseek(cfg)[0]
+        self.assertEqual(ring["kind"], "balance")
+        self.assertEqual(ring["status"], "unknown")
+        self.assertIsNone(ring["remaining"])
+
+    def test_balance_percent_from_reference(self) -> None:
+        cfg = {"balanceFull": {"deepseek": 10.0}}
+        ring = collectors._balance_ring(
+            cfg, vid="deepseek", label="DeepSeek", accent="teal",
+            remaining=6.6, currency="CNY",
+        )
+        self.assertEqual(ring["remainingPercent"], 66)
+        self.assertEqual(ring["usedPercent"], 34)
+        self.assertEqual(ring["remaining"], 6.6)
+
+    def test_balance_no_reference_shows_unknown_pct(self) -> None:
+        ring = collectors._balance_ring(
+            {}, vid="moonshot", label="Kimi", accent="purple",
+            remaining=22.5, currency="CNY",
+        )
+        self.assertIsNone(ring["remainingPercent"])
+        self.assertEqual(ring["remaining"], 22.5)
+
+    def test_mock_includes_balance_ring(self) -> None:
+        ids = [r["id"] for r in collectors.collect({"collectors": ["mock"]})]
+        self.assertIn("deepseek-balance", ids)
+
+    def test_collect_dispatch_unknown_name_ignored(self) -> None:
+        self.assertEqual(collectors.collect({"collectors": ["nope"]}), [])
+
+    def test_sources_missing_ccswitch_db(self) -> None:
+        self.assertIsNone(sources.ccswitch_provider_key(app_type="codex", name="MiniMax"))
+
+    def test_sources_missing_codex_auth(self) -> None:
+        token, account = sources.codex_chatgpt_token()
+        self.assertIsNone(token)
+        self.assertIsNone(account)
+
+    def test_codex_unknown_without_chatgpt_login(self) -> None:
+        rings = collectors._codex({})
+        self.assertTrue(all(r.get("status") == "unknown" for r in rings))
+
+    def test_minimax_unknown_without_key(self) -> None:
+        os.environ.pop("MINIMAX_API_KEY", None)
+        rings = collectors._minimax({})
+        self.assertTrue(all(r.get("status") == "unknown" for r in rings))
+
+    def test_minimax_parses_window_and_week_percent(self) -> None:
+        data = {
+            "model_remains": [
+                {
+                    "model_name": "general",
+                    "end_time": 1788868800000,
+                    "current_interval_remaining_percent": 100,
+                    "weekly_end_time": 1789315200000,
+                    "current_weekly_remaining_percent": 87,
+                }
+            ]
+        }
+        rings = {r["id"]: r for r in collectors._minimax_rings(data)}
+        self.assertEqual(rings["minimax-5h"]["usedPercent"], 0)
+        self.assertEqual(rings["minimax-5h"]["resetsAt"], 1788868800)
+        self.assertEqual(rings["minimax-week"]["usedPercent"], 13)
+        self.assertEqual(rings["minimax-week"]["resetsAt"], 1789315200)
+
+    def test_codex_parses_rate_limit_windows(self) -> None:
+        data = {
+            "rate_limit": {
+                "primary_window": {"used_percent": 1, "reset_at": 1000, "limit_window_seconds": 18000},
+                "secondary_window": {"used_percent": 0, "reset_at": 2000, "limit_window_seconds": 604800},
+            }
+        }
+        rings = {r["id"]: r for r in collectors._codex_rings(data)}
+        self.assertEqual(rings["codex-5h"]["usedPercent"], 1)
+        self.assertEqual(rings["codex-5h"]["windowMins"], 300)
+        self.assertEqual(rings["codex-week"]["usedPercent"], 0)
+        self.assertEqual(rings["codex-week"]["windowMins"], 10080)
+
+
+if __name__ == "__main__":
+    unittest.main()
