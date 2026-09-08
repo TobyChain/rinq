@@ -50,10 +50,13 @@ final class Store: ObservableObject {
         await patch(["keys": [id: ""]])
     }
 
-    func moveRing(from src: IndexSet, to dst: Int) async {
+    func moveRing(id ringId: String, direction: Int) async {
         guard let rings = status?.rings else { return }
         var ids = rings.map(\.id)
-        ids.move(fromOffsets: src, toOffset: dst)
+        guard let idx = ids.firstIndex(of: ringId) else { return }
+        let target = idx + direction
+        guard target >= 0, target < ids.count else { return }
+        ids.swapAt(idx, target)
         await patch(["ringOrder": ids])
     }
 

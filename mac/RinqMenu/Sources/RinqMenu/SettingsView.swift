@@ -54,20 +54,23 @@ struct SettingsView: View {
             }
             Section("Ring order") {
                 if let rings = store.status?.rings, !rings.isEmpty {
-                    Text("Drag to reorder; rings and the menu icon update immediately.")
+                    Text("Use the arrows to reorder. Rings and the menu icon update immediately.")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
-                    ForEach(rings) { ring in
-                        HStack(spacing: 10) {
-                            Image(systemName: "line.3.horizontal")
-                                .foregroundStyle(.secondary)
+                    ForEach(Array(rings.enumerated()), id: \.element.id) { idx, ring in
+                        HStack(spacing: 8) {
                             Circle().fill(Palette.color(ring.accent)).frame(width: 9, height: 9)
                             Text(ring.label).font(.system(size: 12))
                             Spacer()
+                            Button {
+                                Task { await store.moveRing(id: ring.id, direction: -1) }
+                            } label: { Image(systemName: "chevron.up") }
+                                .buttonStyle(.borderless).disabled(idx == 0)
+                            Button {
+                                Task { await store.moveRing(id: ring.id, direction: 1) }
+                            } label: { Image(systemName: "chevron.down") }
+                                .buttonStyle(.borderless).disabled(idx == rings.count - 1)
                         }
                         .padding(.vertical, 2)
-                    }
-                    .onMove { from, to in
-                        Task { await store.moveRing(from: from, to: to) }
                     }
                 } else {
                     Text("No active rings — add a provider key.").font(.system(size: 11))
