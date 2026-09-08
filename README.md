@@ -12,11 +12,31 @@ iPhone app / widgets  ──direct HTTPS──►  vendor quota endpoints
 Apple Watch app/complication  (same code, same keys, each fetches directly)
 ```
 
-An optional Mac collector (`mac/`) also exists as a local relay that can read
-cc-switch and the Codex ChatGPT login, but the phone/watch app does not depend
-on it.
+An optional **Mac web dashboard** (`mac/`) also exists: it runs a tiny local
+server that serves the same rings in a phone-friendly web page — no app
+install and no code signing, just open the URL on your iPhone.
 
-## The apps (standalone, recommended)
+## Zero-install option: Mac web dashboard
+
+If you'd rather not build/sign anything, run the collector on your Mac and
+open the dashboard from any browser on the same network:
+
+```bash
+./install.sh                       # installs CLI + launchd daemon (loopback)
+rinq serve --host 0.0.0.0          # or: bind the daemon to your LAN
+```
+
+- On the Mac: <http://127.0.0.1:7788/>
+- On your iPhone/iPad (same Wi-Fi): `http://<mac-lan-ip>:7788/` — the command
+  prints this address. Add it to your iPhone Home Screen for an app-like view.
+- The page polls `/status` every 60s and shows the same Activity-style rings
+  and per-vendor bars. To keep it always reachable, set `"host": "0.0.0.0"` in
+  `~/.rinq/config.json` and the launchd daemon will bind to the LAN.
+
+No auth is built in: only expose it on a trusted network. It never displays
+your keys — only quota percentages and amounts.
+
+## The apps (standalone)
 
 Build the Xcode project (XcodeGen) and run on the iOS simulator:
 

@@ -31,7 +31,8 @@ def cmd_status(_args: argparse.Namespace) -> int:
 
 def cmd_serve(args: argparse.Namespace) -> int:
     cfg = load_config()
-    serve(args.port or cfg.get("port", DEFAULT_PORT))
+    host = args.host or cfg.get("host", "127.0.0.1")
+    serve(args.port or cfg.get("port", DEFAULT_PORT), host)
     return 0
 
 
@@ -120,8 +121,13 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("status", help="print aggregated status JSON")
     s.set_defaults(func=cmd_status)
 
-    s = sub.add_parser("serve", help="run the local HTTP API")
+    s = sub.add_parser("serve", help="run the HTTP API + web dashboard")
     s.add_argument("--port", type=int, default=0)
+    s.add_argument(
+        "--host",
+        default="",
+        help="bind address; use 0.0.0.0 to expose on your LAN (iPhone/iPad)",
+    )
     s.set_defaults(func=cmd_serve)
 
     s = sub.add_parser("push", help="record an agent event")

@@ -12,6 +12,10 @@ DEFAULT_PORT = 7788
 
 DEFAULT_CONFIG = {
     "port": DEFAULT_PORT,
+    # 127.0.0.1 = this Mac only. Set to 0.0.0.0 (or "host": "0.0.0.0" here) to
+    # open the dashboard to your phone/tablet on the same Wi-Fi. No auth; only
+    # enable on trusted networks.
+    "host": "127.0.0.1",
     "budgetUsd": {"openai": 20.0, "anthropic": 20.0},
     # Reference top-up amount (same currency as the vendor's balance) used to
     # turn an absolute prepaid balance into a ring percentage. CNY for the
