@@ -33,29 +33,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggle(_ sender: Any?) {
         if let pop = popover, pop.isShown { pop.performClose(sender); return }
 
-        let tab = NSTabViewController()
-        tab.tabStyle = .segmentedControlOnTop
-
-        let dash = NSHostingController(rootView: DashboardView(store: store).padding(12))
-        dash.title = "Rings"
-        let settings = NSHostingController(rootView: SettingsView(store: store))
-        settings.title = "Providers"
-        tab.addChild(dash)
-        tab.addChild(settings)
-
+        let root = NSHostingController(rootView: RootView(store: store))
         let pop = NSPopover()
         pop.behavior = .transient
         pop.contentSize = NSSize(width: 360, height: 480)
-        pop.contentViewController = tab
+        pop.contentViewController = root
         pop.show(relativeTo: item.button!.bounds, of: item.button!, preferredEdge: .minY)
 
-        // Force a single opaque (non-vibrant) background on the whole popover,
-        // including the segmented-tab chrome. The NSPopover material is private,
-        // so find its layer tree view and replace the vibrant material with a
-        // solid window-background fill. This must run after show().
+        // Replace the popover's vibrant backdrop with a solid window-background
+        // layer so the SwiftUI content (including the segmented control) reads
+        // cleanly. Runs after show() once the layer tree exists.
         DispatchQueue.main.async {
-            if let root = pop.contentViewController?.view.window?.contentView {
-                self.makeOpaque(root)
+            if let window = pop.contentViewController?.view.window,
+               let content = window.contentView {
+                self.makeOpaque(content)
             }
         }
         popover = pop
@@ -64,10 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func makeOpaque(_ view: NSView) {
-        // Recolor any backdrop/visual-effect views to a solid window background.
         for sub in view.subviews {
-            if sub is NSVisualEffectView {
-                let vfx = sub as! NSVisualEffectView
+            if let vfx = sub as? NSVisualEffectView? ?? (sub is NSVisualEffectView ? sub : nil) as? NSVisualEffectView {
                 vfx.material = .windowBackground
                 vfx.blendingMode = .withinWindow
                 vfx.state = .inactive

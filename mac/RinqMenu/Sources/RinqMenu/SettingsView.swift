@@ -12,6 +12,13 @@ struct DashboardView: View {
                     ForEach(store.status?.rings ?? []) { ring in
                         BarRow(ring: ring)
                     }
+                    if (store.status?.rings ?? []).isEmpty {
+                        Text("No active rings. Add a provider in the Providers tab.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding()
+                    }
                 }
                 .padding(.horizontal)
                 Text(updated)
@@ -20,9 +27,7 @@ struct DashboardView: View {
             }
             .padding(.bottom, 16)
             .frame(maxWidth: .infinity)
-            .background(Color(NSColor.windowBackgroundColor).opacity(0.92))
         }
-        .frame(width: 340)
     }
 
     private var updated: String {
@@ -71,7 +76,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 340, height: 430)
+        .frame(maxWidth: .infinity)
     }
 }
 
