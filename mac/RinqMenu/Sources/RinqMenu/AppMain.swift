@@ -47,6 +47,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pop.behavior = .transient
         pop.contentSize = NSSize(width: 360, height: 470)
         pop.contentViewController = tab
+        for vc in [dash, settings] {
+            // Opaque background: the popover's vibrancy makes SwiftUI text look
+            // washed out, so give the content a solid window-background fill.
+            vc.view.wantsLayer = true
+            vc.view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        }
         pop.show(relativeTo: item.button!.bounds, of: item.button!, preferredEdge: .minY)
         popover = pop
 

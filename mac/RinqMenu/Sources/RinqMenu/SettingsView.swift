@@ -19,8 +19,10 @@ struct DashboardView: View {
                     .foregroundStyle(.secondary)
             }
             .padding(.bottom, 16)
+            .frame(maxWidth: .infinity)
+            .background(Color(NSColor.windowBackgroundColor).opacity(0.92))
         }
-        .frame(width: 320)
+        .frame(width: 340)
     }
 
     private var updated: String {
