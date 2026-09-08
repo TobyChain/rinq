@@ -1,6 +1,7 @@
 app/build/
 app/*.xcodeproj/
 app/DerivedData/
+mac/RinqMenu/.build/
 mac/__pycache__/
 **/__pycache__/
 .pytest_cache/

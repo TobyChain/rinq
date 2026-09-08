@@ -49,8 +49,11 @@ HTML = """<!doctype html>
 <script>
 const COLORS = { blue:'#0a84ff', indigo:'#5e5ce6', green:'#30d158', orange:'#ff9f0a', red:'#ff453a', purple:'#bf5af2', teal:'#64d2ff' };
 function col(a){ return COLORS[a] || COLORS.blue; }
-function pctOf(r){ if(r.kind==='balance') return r.remaining_percent ?? r.used_percent; return r.used_percent; }
-function unknown(r){ return (pctOf(r)===null || pctOf(r)===undefined || r.status==='unknown'); }
+function pctOf(r){ if(r.kind==='balance') return r.remainingPercent ?? r.usedPercent; return r.usedPercent; }
+function sym(r){ return r.currency==='USD' ? '$' : '¥'; }
+function amount(r){ return (r.remaining!=null) ? (sym(r)+Number(r.remaining).toFixed(2)) : null; }
+// Unknown only when neither a percentage nor an absolute amount is available.
+function unknown(r){ return (pctOf(r)===null || pctOf(r)===undefined) && !amount(r) && r.status!=='unknown' ? false : (pctOf(r)==null && !amount(r)); }
 function arc(radius, pct, color, width){
   const c=2*Math.PI*radius, dash=c*Math.max(0,Math.min(100,pct||0))/100;
   return `<circle cx="130" cy="130" r="${radius}" fill="none" stroke="${color}" stroke-opacity="0.18" stroke-width="${width}"/>
@@ -58,17 +61,18 @@ function arc(radius, pct, color, width){
             stroke-linecap="round" stroke-dasharray="${dash} ${c}"/>`;
 }
 function resetText(r){
-  if(r.resets_at){
-    const s=r.resets_at - Math.floor(Date.now()/1000);
-    if(s<=0) return (r.used_percent??0)+'% used';
+  if(amount(r) && pctOf(r)==null) return amount(r)+' left';
+  if(r.resetsAt){
+    const s=r.resetsAt - Math.floor(Date.now()/1000);
+    if(s<=0) return (r.usedPercent??0)+'% used';
     const m=Math.floor(s/60);
     if(m>=1440) return 'resets in '+Math.floor(m/1440)+'d';
     if(m>=60) return 'resets in '+Math.floor(m/60)+'h '+(m%60)+'m';
     return 'resets in '+m+'m';
   }
-  if(r.kind==='balance' && r.remaining!=null){ const sym=r.currency==='USD'?'$':'¥'; return sym+Number(r.remaining).toFixed(2)+' left'; }
-  if(r.kind==='budget' && r.spent_usd!=null) return '$'+Number(r.spent_usd).toFixed(2)+' spent this month';
-  return (r.used_percent??0)+'%';
+  if(r.kind==='balance' && r.remaining!=null) return sym(r)+Number(r.remaining).toFixed(2)+' left';
+  if(r.kind==='budget' && r.spentUsd!=null) return '$'+Number(r.spentUsd).toFixed(2)+' spent this month';
+  return (r.usedPercent??0)+'%';
 }
 async function load(){
   try{
@@ -77,7 +81,7 @@ async function load(){
     document.getElementById('err').style.display='none';
     draw(d.rings||[]);
     bars(d.rings||[]);
-    const t=d.updated_at? new Date(d.updated_at*1000) : null;
+    const t=d.updatedAt? new Date(d.updatedAt*1000) : null;
     document.getElementById('updated').textContent = t? ('updated '+t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})) : '';
   }catch(e){ document.getElementById('err').style.display='block'; }
 }
@@ -86,19 +90,23 @@ function draw(rings){
   const W=13, gap=12, base=118;
   document.getElementById('rings').innerHTML = top.map((r,i)=>{
     const rad = base - i*(W+gap);
-    return arc(rad, unknown(r)?0:pctOf(r), unknown(r)?'#888':col(r.accent), W);
+    const p = pctOf(r);
+    return arc(rad, (p==null?0:p), (p==null&&!amount(r))?'#888':col(r.accent), W);
   }).join('');
   document.getElementById('head').textContent = top.length? top.length : '–';
 }
 function bars(rings){
   document.getElementById('bars').innerHTML = rings.map(r=>{
-    const p = unknown(r)?0:(pctOf(r)??0);
-    const v = unknown(r)?'--':(p+'%');
-    const c = unknown(r)?'#888':col(r.accent);
+    const p = pctOf(r);
+    const hasPct = (p!=null);
+    const amt = amount(r);
+    const v = hasPct ? (p+'%') : (amt || '--');
+    const dead = !hasPct && !amt;
+    const c = dead ? '#888' : col(r.accent);
     return `<div class="bar">
       <div class="top"><span class="label">${r.label}</span><span class="val" style="color:${c}">${v}</span></div>
-      <div class="track"><div class="fill" style="width:${p}%;background:${c}"></div></div>
-      <div class="sub">${unknown(r)?'no data — add a key':resetText(r)}</div>
+      <div class="track"><div class="fill" style="width:${hasPct?p:0}%;background:${c}"></div></div>
+      <div class="sub">${dead?'no data — add a key':resetText(r)}</div>
     </div>`;
   }).join('');
 }

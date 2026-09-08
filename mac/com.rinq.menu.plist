@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.rinq.menu</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>__HOME__/.rinq/bin/RinqMenu</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>__HOME__/Library/Logs/rinq-menu.log</string>
+	<key>StandardErrorPath</key>
+	<string>__HOME__/Library/Logs/rinq-menu.err.log</string>
+</dict>
+</plist>

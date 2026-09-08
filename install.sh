@@ -79,9 +79,24 @@ launchctl load "$PLIST_DST" 2>/dev/null || launchctl bootstrap "gui/$(id -u)" "$
 
 echo
 echo "rinq daemon: $(launchctl list 2>/dev/null | grep -q "$PLIST_LABEL" && echo loaded || echo 'not loaded (check logs)')"
+
+# ---- Menu-bar app (optional; needs Xcode command line tools to build) ----
+MENU_LABEL="com.rinq.menu"
+MENU_PLIST="$LAUNCH_AGENTS/$MENU_LABEL.plist"
+if [ -x "$REPO/mac/RinqMenu/build.sh" ]; then
+  if "$REPO/mac/RinqMenu/build.sh" >/dev/null 2>&1; then
+    sed -e "s#__HOME__#$HOME#g" "$REPO/mac/com.rinq.menu.plist" > "$MENU_PLIST"
+    launchctl unload "$MENU_PLIST" 2>/dev/null || true
+    launchctl load "$MENU_PLIST" 2>/dev/null || launchctl bootstrap "gui/$(id -u)" "$MENU_PLIST" 2>/dev/null || true
+    echo "rinq menu bar: $(launchctl list 2>/dev/null | grep -q "$MENU_LABEL" && echo loaded || echo 'built; load manually')"
+  else
+    echo "rinq menu bar: build skipped (swift build failed; needs Xcode CLT)"
+  fi
+fi
+
 echo
 echo "Next steps:"
 echo "  1. Ensure $BIN_DIR is on PATH."
 echo "  2. Verify:  rinq status"
-echo "  3. Wire agent hooks (see README -> Hooking agents)."
-echo "  4. Watch build:  make watch-build  (then make watch-sim)"
+echo "  3. Dashboard: open http://127.0.0.1:7788/  (rings live in the menu bar)"
+echo "  4. Wire agent hooks (see README -> Hooking agents)."

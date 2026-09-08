@@ -36,6 +36,31 @@ rinq serve --host 0.0.0.0          # or: bind the daemon to your LAN
 No auth is built in: only expose it on a trusted network. It never displays
 your keys — only quota percentages and amounts.
 
+## macOS menu bar app
+
+A native menu-bar item (`mac/RinqMenu/`, Swift + AppKit) shows the top three
+quotas as small concentric rings right in the menu bar; click it to open the
+dashboard in a popover. It polls `127.0.0.1:7788/status` every 30s and needs
+the daemon running.
+
+It builds with the Swift compiler that ships with Xcode/CLT (no SwiftPM
+dependencies) and `install.sh` builds and launches it automatically as a
+launchd agent (`com.rinq.menu`):
+
+```bash
+./install.sh                       # builds + starts daemon and menu app
+```
+
+Manual:
+
+```bash
+mac/RinqMenu/build.sh              # build release into ~/.rinq/bin/RinqMenu
+~/.rinq/bin/RinqMenu               # run it (foreground for testing)
+```
+
+Set `RINQ_PORT` if you run the daemon on a non-default port. Rebuild after
+`git pull`. No App Store / signing involved — it runs locally from source.
+
 ## The apps (standalone)
 
 Build the Xcode project (XcodeGen) and run on the iOS simulator:
