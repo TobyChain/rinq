@@ -10,6 +10,7 @@ from .dashboard import HTML
 from .events import apply_event
 from .focus import current_focus
 from .push import push_glance
+from .settings_api import apply_public_settings, public_settings
 from .state import load_state, save_state
 
 
@@ -57,6 +58,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_html(HTML)
         elif path == "/status":
             self._send_json(200, build_status())
+        elif path == "/config":
+            self._send_json(200, public_settings(load_config()))
         else:
             self._send_json(404, {"error": "not found"})
 
@@ -91,6 +94,13 @@ class Handler(BaseHTTPRequestHandler):
             status = build_status()
             ok = push_glance(cfg, status["rings"], status["agents"])
             self._send_json(200 if ok else 202, {"pushed": ok})
+        elif path == "/config":
+            try:
+                apply_public_settings(cfg, payload)
+            except (ValueError, TypeError) as exc:
+                self._send_json(400, {"error": str(exc)})
+                return
+            self._send_json(200, {"ok": True, "config": public_settings(load_config())})
         else:
             self._send_json(404, {"error": "not found"})
 

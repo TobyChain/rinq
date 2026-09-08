@@ -16,6 +16,23 @@ def _cc_db_path() -> Path:
     return Path(os.environ.get("RINQ_CCSWITCH_DB", str(Path.home() / ".cc-switch" / "cc-switch.db")))
 
 
+def vendor_key(cfg: dict, vendor: str, env_var: str) -> str:
+    """Resolve an API key for a vendor: config keys, env var, then cc-switch."""
+    key = (cfg.get("keys") or {}).get(vendor)
+    if key:
+        return key
+    if os.environ.get(env_var):
+        return os.environ[env_var]
+    cc = {
+        "deepseek": ("codex", "DeepSeek"),
+        "minimax": ("codex", "MiniMax"),
+    }
+    if vendor in cc:
+        app_type, name = cc[vendor]
+        return ccswitch_provider_key(app_type=app_type, name=name) or ""
+    return ""
+
+
 def ccswitch_provider_key(*, app_type: str, name: str) -> str | None:
     db = _cc_db_path()
     if not db.exists():

@@ -171,11 +171,9 @@ def _unknown_balance(cfg: dict, *, vid: str, label: str, accent: str) -> dict[st
 
 
 def _deepseek(cfg: dict) -> list[dict[str, Any]]:
-    key = os.environ.get("DEEPSEEK_API_KEY", "") or sources.ccswitch_provider_key(
-        app_type="codex", name="DeepSeek"
-    ) or ""
+    key = sources.vendor_key(cfg, "deepseek", "DEEPSEEK_API_KEY")
     if not key:
-        return [_unknown_balance(cfg, vid="deepseek", label="DeepSeek", accent="teal")]
+        return []
     data = _get_json("https://api.deepseek.com/user/balance", key)
     remaining = None
     if data:
@@ -195,9 +193,9 @@ def _deepseek(cfg: dict) -> list[dict[str, Any]]:
 
 
 def _moonshot(cfg: dict) -> list[dict[str, Any]]:
-    key = os.environ.get("MOONSHOT_API_KEY", "")
+    key = sources.vendor_key(cfg, "moonshot", "MOONSHOT_API_KEY")
     if not key:
-        return [_unknown_balance(cfg, vid="moonshot", label="Kimi", accent="purple")]
+        return []
     data = _get_json("https://api.moonshot.cn/v1/users/me/balance", key)
     remaining = None
     if data:
@@ -213,12 +211,12 @@ def _moonshot(cfg: dict) -> list[dict[str, Any]]:
 
 
 def _zhipu(cfg: dict) -> list[dict[str, Any]]:
-    key = os.environ.get("ZHIPU_API_KEY", "")
+    key = sources.vendor_key(cfg, "zhipu", "ZHIPU_API_KEY")
     if not key:
-        return [_unknown_balance(cfg, vid="zhipu", label="GLM", accent="red")]
+        return []
     # No stable documented personal balance route; hit the resource endpoint and
     # degrade to unknown if the shape does not carry a remaining amount.
-    data = _get_json("https://open.bigmodel.cn/api/paas/v4/resource/usage", key)
+    data = _get_json("https://open.bigmodel.cn/api/monitor/usage/quota/limit", key)
     remaining = None
     if data:
         d = data.get("data", data)
@@ -233,18 +231,15 @@ def _zhipu(cfg: dict) -> list[dict[str, Any]]:
 
 
 def _minimax(cfg: dict) -> list[dict[str, Any]]:
-    key = os.environ.get("MINIMAX_API_KEY", "") or sources.ccswitch_provider_key(
-        app_type="codex", name="MiniMax"
-    ) or ""
+    key = sources.vendor_key(cfg, "minimax", "MINIMAX_API_KEY")
     if not key:
-        return [_unknown_balance(cfg, vid="minimax", label="MiniMax", accent="orange")]
+        return []
     data = _get_json(
         "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains", key
     )
     if not data:
-        return [_unknown_balance(cfg, vid="minimax", label="MiniMax", accent="orange")]
-    rings = _minimax_rings(data)
-    return rings or [_unknown_balance(cfg, vid="minimax", label="MiniMax", accent="orange")]
+        return []
+    return _minimax_rings(data)
 
 
 def _minimax_rings(data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -325,40 +320,32 @@ def _codex_rings(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _xiaomi(cfg: dict) -> list[dict[str, Any]]:
-    return [_unknown_balance(cfg, vid="xiaomi", label="MiMo", accent="orange")]
+    key = sources.vendor_key(cfg, "xiaomi", "XIAOMI_API_KEY")
+    # No confirmed public balance route; only show when explicitly configured.
+    if not key:
+        return []
+    return []
 
 
 def _codex(cfg: dict) -> list[dict[str, Any]]:
     token, account = sources.codex_chatgpt_token()
     if not token:
-        return [_codex_unknown()]
+        return []
     data = _get_json(
         "https://chatgpt.com/backend-api/wham/usage",
         token,
         {"ChatGPT-Account-Id": account or ""},
     )
     if not data:
-        return [_codex_unknown()]
-    return _codex_rings(data) or [_codex_unknown()]
+        return []
+    return _codex_rings(data)
 
 
 def _openai(cfg: dict) -> list[dict[str, Any]]:
-    key = os.environ.get("OPENAI_ADMIN_KEY", "")
+    key = sources.vendor_key(cfg, "openai", "OPENAI_ADMIN_KEY")
     budget = float(cfg.get("budgetUsd", {}).get("openai", 20.0))
     if not key:
-        return [
-            {
-                "id": "openai-api",
-                "label": "OpenAI API",
-                "vendor": "openai",
-                "kind": "budget",
-                "usedPercent": None,
-                "remainingPercent": None,
-                "status": "unknown",
-                "budgetUsd": budget,
-                "accent": "green",
-            }
-        ]
+        return []
     start = int(datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0).timestamp())
     url = f"https://api.openai.com/v1/organization/costs?start_time={start}&bucket_width=1d&limit=31"
     payload = _get_json(url, key) or {}
@@ -389,20 +376,11 @@ def _openai(cfg: dict) -> list[dict[str, Any]]:
 
 
 def _anthropic(cfg: dict) -> list[dict[str, Any]]:
-    budget = float(cfg.get("budgetUsd", {}).get("anthropic", 20.0))
-    return [
-        {
-            "id": "anthropic-api",
-            "label": "Claude API",
-            "vendor": "anthropic",
-            "kind": "budget",
-            "usedPercent": None,
-            "remainingPercent": None,
-            "status": "unknown",
-            "budgetUsd": budget,
-            "accent": "orange",
-        }
-    ]
+    # Requires an org Admin key (Usage & Cost API); hide until configured.
+    key = sources.vendor_key(cfg, "anthropic", "ANTHROPIC_ADMIN_KEY")
+    if not key:
+        return []
+    return []
 
 
 def _month_end_epoch() -> int:
@@ -426,8 +404,19 @@ _COLLECTORS = {
 
 def collect(cfg: dict) -> list[dict[str, Any]]:
     rings: list[dict[str, Any]] = []
+    enabled = cfg.get("enabled") or {}
     for name in cfg.get("collectors", ["mock"]):
+        if enabled.get(name) is False:
+            continue
         fn = _COLLECTORS.get(name)
         if fn:
             rings.extend(fn(cfg))
+    # Hide rings for vendors the user explicitly turned off.
+    rings = [r for r in rings if enabled.get(r.get("vendor"), True) is not False]
+    # Drop placeholders that still report unknown; configured vendors with a
+    # failed fetch are kept (so the user sees a stale/error state), but
+    # vendors with no credential produce nothing.
+    rings = [r for r in rings if not (r.get("status") == "unknown" and r.get("usedPercent") is None and r.get("remaining") is None)]
+    from . import config as _config
+    rings.sort(key=_config.ring_sort_key(cfg))
     return rings

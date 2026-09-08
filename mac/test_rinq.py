@@ -54,14 +54,27 @@ class EventTests(unittest.TestCase):
 
 
 class CollectorTests(unittest.TestCase):
-    def test_unknown_when_no_key(self) -> None:
-        import os
+    def test_no_key_returns_no_rings(self) -> None:
         os.environ.pop("DEEPSEEK_API_KEY", None)
-        cfg = {"balanceFull": {"deepseek": 20.0}}
-        ring = collectors._deepseek(cfg)[0]
-        self.assertEqual(ring["kind"], "balance")
-        self.assertEqual(ring["status"], "unknown")
-        self.assertIsNone(ring["remaining"])
+        self.assertEqual(collectors._deepseek({"balanceFull": {"deepseek": 20.0}}), [])
+        self.assertEqual(collectors._minimax({}), [])
+        self.assertEqual(collectors._codex({}), [])
+
+    def test_unconfigured_collectors_are_hidden_and_sorted(self) -> None:
+        # No credentials in the test env -> real collectors emit nothing.
+        cfg = {"collectors": ["codex", "minimax", "deepseek"], "ringOrder": ["deepseek-balance"]}
+        rings = collectors.collect(cfg)
+        self.assertEqual(rings, [])
+
+    def test_enabled_false_hides_vendor(self) -> None:
+        cfg = {"collectors": ["mock"], "enabled": {"deepseek": False}}
+        ids = [r["id"] for r in collectors.collect(cfg)]
+        self.assertNotIn("deepseek-balance", ids)
+
+    def test_ring_order_applied(self) -> None:
+        cfg = {"collectors": ["mock"], "ringOrder": ["openai-api", "codex-5h"]}
+        ids = [r["id"] for r in collectors.collect(cfg)]
+        self.assertEqual(ids[:2], ["openai-api", "codex-5h"])
 
     def test_balance_percent_from_reference(self) -> None:
         cfg = {"balanceFull": {"deepseek": 10.0}}
@@ -96,14 +109,12 @@ class CollectorTests(unittest.TestCase):
         self.assertIsNone(token)
         self.assertIsNone(account)
 
-    def test_codex_unknown_without_chatgpt_login(self) -> None:
-        rings = collectors._codex({})
-        self.assertTrue(all(r.get("status") == "unknown" for r in rings))
+    def test_codex_no_login_returns_no_rings(self) -> None:
+        self.assertEqual(collectors._codex({}), [])
 
-    def test_minimax_unknown_without_key(self) -> None:
+    def test_minimax_no_key_returns_no_rings(self) -> None:
         os.environ.pop("MINIMAX_API_KEY", None)
-        rings = collectors._minimax({})
-        self.assertTrue(all(r.get("status") == "unknown" for r in rings))
+        self.assertEqual(collectors._minimax({}), [])
 
     def test_minimax_parses_window_and_week_percent(self) -> None:
         data = {
