@@ -2,14 +2,19 @@ import SwiftUI
 
 struct RingsView: View {
     let rings: [Ring]
-    var diameter: CGFloat = 180
+    var diameter: CGFloat = 190
 
     var body: some View {
+        // Adapt the ring thickness/gap to how many there are so any number
+        // fits inside the outer diameter.
+        let n = max(rings.count, 1)
+        let lineWidth = min(13, (diameter - 30) / (CGFloat(n) * 2.3))
+        let step = lineWidth + 6
         ZStack {
-            ForEach(Array(Array(rings.prefix(3)).enumerated()), id: \.element.id) { idx, ring in
-                RingArc(ring: ring, lineWidth: 13)
-                    .frame(width: diameter - CGFloat(idx) * 46,
-                           height: diameter - CGFloat(idx) * 46)
+            ForEach(Array(rings.enumerated()), id: \.element.id) { idx, ring in
+                let d = diameter - CGFloat(idx) * 2 * step
+                RingArc(ring: ring, lineWidth: lineWidth)
+                    .frame(width: max(d, lineWidth * 2), height: max(d, lineWidth * 2))
             }
         }
         .frame(width: diameter, height: diameter)

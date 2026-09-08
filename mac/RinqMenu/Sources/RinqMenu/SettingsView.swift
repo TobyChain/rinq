@@ -35,7 +35,6 @@ struct DashboardView: View {
 
 struct SettingsView: View {
     @ObservedObject var store: Store
-    @State private var orderExpanded = false
 
     var body: some View {
         Form {
@@ -50,17 +49,20 @@ struct SettingsView: View {
             }
             Section("Ring order") {
                 if let rings = store.status?.rings, !rings.isEmpty {
-                    Toggle("Customize", isOn: $orderExpanded)
-                    if orderExpanded {
-                        ForEach(rings) { ring in
-                            HStack {
-                                Circle().fill(Palette.color(ring.accent)).frame(width: 9, height: 9)
-                                Text(ring.label).font(.system(size: 12))
-                                Spacer()
-                            }
+                    Text("Drag to reorder; rings and the menu icon update immediately.")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                    ForEach(rings) { ring in
+                        HStack(spacing: 10) {
+                            Image(systemName: "line.3.horizontal")
+                                .foregroundStyle(.secondary)
+                            Circle().fill(Palette.color(ring.accent)).frame(width: 9, height: 9)
+                            Text(ring.label).font(.system(size: 12))
+                            Spacer()
                         }
-                        Text("Drag in the macOS app / web dashboard to reorder; order is saved to the daemon.")
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .padding(.vertical, 2)
+                    }
+                    .onMove { from, to in
+                        Task { await store.moveRing(from: from, to: to) }
                     }
                 } else {
                     Text("No active rings — add a provider key.").font(.system(size: 11))
@@ -69,7 +71,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 340, height: 420)
+        .frame(width: 340, height: 430)
     }
 }
 

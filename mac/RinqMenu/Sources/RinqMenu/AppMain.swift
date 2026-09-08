@@ -45,26 +45,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let pop = NSPopover()
         pop.behavior = .transient
-        pop.contentSize = NSSize(width: 360, height: 470)
+        pop.contentSize = NSSize(width: 360, height: 480)
         pop.contentViewController = tab
-        for vc in [dash, settings] {
-            // Opaque background: the popover's vibrancy makes SwiftUI text look
-            // washed out, so give the content a solid window-background fill.
-            vc.view.wantsLayer = true
-            vc.view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        }
         pop.show(relativeTo: item.button!.bounds, of: item.button!, preferredEdge: .minY)
+
+        // Force a single opaque (non-vibrant) background on the whole popover,
+        // including the segmented-tab chrome. The NSPopover material is private,
+        // so find its layer tree view and replace the vibrant material with a
+        // solid window-background fill. This must run after show().
+        DispatchQueue.main.async {
+            if let root = pop.contentViewController?.view.window?.contentView {
+                self.makeOpaque(root)
+            }
+        }
         popover = pop
 
         Task { await store.refresh() }
     }
 
+    private func makeOpaque(_ view: NSView) {
+        // Recolor any backdrop/visual-effect views to a solid window background.
+        for sub in view.subviews {
+            if sub is NSVisualEffectView {
+                let vfx = sub as! NSVisualEffectView
+                vfx.material = .windowBackground
+                vfx.blendingMode = .withinWindow
+                vfx.state = .inactive
+            }
+            sub.wantsLayer = true
+            if sub.layer?.backgroundColor == nil {
+                sub.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            }
+            makeOpaque(sub)
+        }
+        view.wantsLayer = true
+    }
+
     private func render(rings: [Ring]) {
-        let top = Array(rings.prefix(3))
-        let pcts = top.map { pct($0) }
+        // Menu-bar icon shows all configured rings as concentric arcs.
+        let pcts = rings.map { pct($0) }
         item.button?.image = Self.ringImage(pcts: pcts)
         item.button?.image?.isTemplate = false
-        item.button?.toolTip = top.map { "\($0.label): \(pct($0))%" }.joined(separator: "\n")
+        item.button?.toolTip = rings.map { "\($0.label): \(pct($0))%" }.joined(separator: "\n")
     }
 
     private func pct(_ r: Ring) -> Int {
@@ -77,17 +99,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let image = NSImage(size: NSSize(width: size, height: size))
         image.lockFocus()
         let center = NSPoint(x: size / 2, y: size / 2)
-        let colors: [NSColor] = [.systemBlue, .systemPurple, .systemGreen, .systemOrange]
+        let palette: [NSColor] = [.systemBlue, .systemPurple, .systemGreen, .systemOrange,
+                                  .systemTeal, .systemRed, .systemPink, .systemYellow]
+        // Fit however many rings the user has; collapse spacing as more are added.
+        let n = max(pcts.count, 1)
+        let lineWidth = min(2.6, (size - 4) / (CGFloat(n) * 2.4))
+        let step = lineWidth + 1.4
         for (i, pct) in pcts.enumerated() {
-            let radius = (size / 2 - 2) - Double(i) * 3.2
+            let radius = (size / 2 - 2) - CGFloat(i) * step
+            guard radius > lineWidth else { break }
+            let color = palette[i % palette.count]
             let track = NSBezierPath()
-            colors[i].withAlphaComponent(0.18).setStroke()
+            color.withAlphaComponent(0.18).setStroke()
             track.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
-            track.lineWidth = 2.4
+            track.lineWidth = lineWidth
             track.stroke()
             let ring = NSBezierPath()
-            colors[i].setStroke()
-            ring.lineWidth = 2.4
+            color.setStroke()
+            ring.lineWidth = lineWidth
             ring.lineCapStyle = .round
             let p = CGFloat(pct) / 100.0
             ring.appendArc(withCenter: center, radius: radius, startAngle: -90, endAngle: -90 + 360 * p)
