@@ -104,19 +104,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let image = NSImage(size: NSSize(width: size, height: size))
         image.lockFocus()
         let center = NSPoint(x: size / 2, y: size / 2)
+        let palette: [NSColor] = [
+            NSColor(calibratedRed: 0.00, green: 0.52, blue: 1.00, alpha: 1),
+            NSColor(calibratedRed: 0.53, green: 0.37, blue: 1.00, alpha: 1),
+            NSColor(calibratedRed: 0.08, green: 0.82, blue: 0.40, alpha: 1),
+            NSColor(calibratedRed: 1.00, green: 0.58, blue: 0.04, alpha: 1),
+            NSColor(calibratedRed: 0.00, green: 0.76, blue: 0.82, alpha: 1),
+            NSColor(calibratedRed: 1.00, green: 0.26, blue: 0.22, alpha: 1),
+            NSColor(calibratedRed: 1.00, green: 0.22, blue: 0.50, alpha: 1),
+            NSColor(calibratedRed: 1.00, green: 0.82, blue: 0.04, alpha: 1),
+        ]
         let visiblePcts = pcts.isEmpty ? [0] : pcts
         let layout = MenuRingLayout.make(ringCount: visiblePcts.count, imageSize: size)
         let step = layout.lineWidth + layout.gap
         for (i, pct) in visiblePcts.enumerated() {
             let radius = layout.outerRadius - CGFloat(i) * step
             guard radius > layout.lineWidth / 2 else { break }
+            let color = palette[i % palette.count]
             let track = NSBezierPath()
-            NSColor.black.withAlphaComponent(0.82).setStroke()
+            color.withAlphaComponent(0.48).setStroke()
             track.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
             track.lineWidth = layout.lineWidth
             track.stroke()
             let ring = NSBezierPath()
-            NSColor.black.setStroke()
+            color.withAlphaComponent(0.96).setStroke()
             ring.lineWidth = layout.lineWidth
             ring.lineCapStyle = .round
             let p = CGFloat(pct) / 100.0
@@ -124,9 +135,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ring.stroke()
         }
         image.unlockFocus()
-        // Template images let macOS choose the correct high-contrast black or
-        // white tint for transparent, colored, light, and dark menu bars.
-        image.isTemplate = true
+        // Preserve per-ring colors. The translucent track remains visible
+        // while the nearly opaque used arc carries the actual quota value.
+        image.isTemplate = false
         return image
     }
 }

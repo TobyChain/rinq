@@ -68,8 +68,8 @@ final class PopoverLayoutTests: XCTestCase {
 
 final class MenuRingLayoutTests: XCTestCase {
     @MainActor
-    func testMenuIconUsesAdaptiveTemplateRendering() {
-        XCTAssertTrue(AppDelegate.ringImage(pcts: [10, 50, 90]).isTemplate)
+    func testMenuIconPreservesPerRingColors() {
+        XCTAssertFalse(AppDelegate.ringImage(pcts: [10, 50, 90]).isTemplate)
     }
 
     func testEmptyStateStillCreatesOneVisibleRing() {
