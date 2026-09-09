@@ -2,26 +2,33 @@ import XCTest
 @testable import RinqMenu
 
 final class RingOrderTests: XCTestCase {
-    func testMovingDownPlacesDraggedRingAfterEnteredRow() {
+    func testMovingDownUsesTableDropRowSemantics() {
         let rings = [ring("a"), ring("b"), ring("c")]
         XCTAssertEqual(
-            RingOrder.moving(rings, draggedID: "a", before: "b").map(\.id),
+            RingOrder.moving(rings, from: 0, toDropRow: 2).map(\.id),
             ["b", "a", "c"]
         )
     }
 
-    func testMovingUpPlacesDraggedRingBeforeEnteredRow() {
+    func testMovingUpUsesTableDropRowSemantics() {
         let rings = [ring("a"), ring("b"), ring("c")]
         XCTAssertEqual(
-            RingOrder.moving(rings, draggedID: "c", before: "a").map(\.id),
+            RingOrder.moving(rings, from: 2, toDropRow: 0).map(\.id),
             ["c", "a", "b"]
         )
     }
 
-    func testUnknownOrSameRingLeavesOrderUnchanged() {
+    func testDroppingAtEndMovesRingToLastPosition() {
+        let rings = [ring("a"), ring("b"), ring("c")]
+        XCTAssertEqual(
+            RingOrder.moving(rings, from: 0, toDropRow: 3).map(\.id),
+            ["b", "c", "a"]
+        )
+    }
+
+    func testInvalidSourceLeavesOrderUnchanged() {
         let rings = [ring("a"), ring("b")]
-        XCTAssertEqual(RingOrder.moving(rings, draggedID: "a", before: "a"), rings)
-        XCTAssertEqual(RingOrder.moving(rings, draggedID: "x", before: "b"), rings)
+        XCTAssertEqual(RingOrder.moving(rings, from: 4, toDropRow: 0), rings)
     }
 
     private func ring(_ id: String) -> Ring {

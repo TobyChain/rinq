@@ -12,6 +12,7 @@ from .focus import current_focus
 from .push import push_glance
 from .settings_api import apply_public_settings, public_settings
 from .state import load_state, save_state
+from .usage import build_usage_summary
 
 
 def build_status() -> dict[str, Any]:
@@ -60,6 +61,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, build_status())
         elif path == "/config":
             self._send_json(200, public_settings(load_config()))
+        elif path == "/usage":
+            self._send_json(200, build_usage_summary())
         else:
             self._send_json(404, {"error": "not found"})
 

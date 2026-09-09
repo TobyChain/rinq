@@ -4,6 +4,7 @@ import Foundation
 final class Store: ObservableObject {
     @Published var status: Status?
     @Published var settings: SettingsInfo?
+    @Published var usage: UsageSummary?
     @Published var drafts: [String: String] = [:]
     @Published var saving = false
 
@@ -17,8 +18,10 @@ final class Store: ObservableObject {
     func refresh() async {
         async let s: Status? = fetch("/status")
         async let c: SettingsInfo? = fetch("/config")
+        async let u: UsageSummary? = fetch("/usage")
         status = await s
         settings = await c
+        usage = await u
     }
 
     func keyDraft(_ id: String) -> String { drafts[id] ?? "" }

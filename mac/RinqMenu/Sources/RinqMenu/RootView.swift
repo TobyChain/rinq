@@ -1,9 +1,23 @@
 import SwiftUI
 
 enum RinqTab: String, CaseIterable {
-    case rings, providers
-    var title: String { self == .rings ? "Rings" : "Providers" }
-    var icon: String { self == .rings ? "circle.hexagongrid" : "slider.horizontal.3" }
+    case rings, usage, providers
+
+    var title: String {
+        switch self {
+        case .rings: return "Rings"
+        case .usage: return "Usage"
+        case .providers: return "Providers"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .rings: return "circle.hexagongrid"
+        case .usage: return "chart.bar.xaxis"
+        case .providers: return "slider.horizontal.3"
+        }
+    }
 }
 
 /// The single Rinq interface shown in the menu-bar popover.
@@ -38,6 +52,7 @@ struct RootView: View {
             Group {
                 switch tab {
                 case .rings: DashboardView(store: store, layout: layout)
+                case .usage: UsageView(store: store)
                 case .providers: SettingsView(store: store)
                 }
             }

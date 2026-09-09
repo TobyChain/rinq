@@ -128,6 +128,22 @@ schema/         status JSON contract
 See `schema/status.md` for the ring/event contract.
 
 
+### Local coding-agent token usage
+
+The macOS daemon also exposes a local /usage endpoint and the menu-bar
+popover Usage tab. It reads input and output token counters from local native
+coding-agent logs, including Codex, TraeX, and Claude Code when those directories
+exist. Browser sessions are excluded. Rinq stores only normalized counters and
+source metadata in ~/.rinq/usage.sqlite3; prompt text, responses, tool
+arguments, and tool output are not stored.
+
+Default log locations are ~/.codex/sessions, ~/.trae/cli/sessions, and
+~/.claude/projects. Set CODEX_HOME, TRAE_HOME or TRAECLI_HOME, and
+CLAUDE_CONFIG_DIR when a client uses another location. The default lookback is
+7 days and can be changed with usage.lookbackDays in ~/.rinq/config.json.
+Supported extra roots can be added with usage.extraSources entries containing an
+adapter and path. See schema/status.md for the /usage response contract.
+
 ## Hooking agents
 
 TraeX — merge `hooks/traex.hooks.json` into your user `hooks.json` (or the

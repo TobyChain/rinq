@@ -4,7 +4,8 @@ import json
 import os
 from pathlib import Path
 
-HOME = Path(os.environ.get("RINQ_HOME", Path.home() / ".rinq"))
+rinq_home_env = os.environ.get("RINQ_HOME")
+HOME = Path(rinq_home_env).expanduser() if rinq_home_env else Path.home() / ".rinq"
 STATE_PATH = HOME / "state.json"
 CONFIG_PATH = HOME / "config.json"
 
@@ -49,6 +50,7 @@ DEFAULT_CONFIG = {
     # and the "keys" block above). Vendors with no credential are omitted from
     # /status entirely. Switch to ["mock"] for synthetic demo data.
     "collectors": ["codex", "minimax", "deepseek", "openai", "anthropic", "moonshot", "zhipu", "xiaomi"],
+    "usage": {"lookbackDays": 7, "extraSources": []},
     "focus": {"breakEveryMins": 50, "breakMins": 10},
     "push": {
         "pushoverToken": os.environ.get("PUSHOVER_TOKEN", ""),

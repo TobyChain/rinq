@@ -21,17 +21,11 @@ struct Ring: Codable, Identifiable, Hashable {
 }
 
 enum RingOrder {
-    static func moving(_ rings: [Ring], draggedID: String, before targetID: String) -> [Ring] {
-        guard draggedID != targetID,
-              let source = rings.firstIndex(where: { $0.id == draggedID }),
-              let target = rings.firstIndex(where: { $0.id == targetID }) else { return rings }
-
+    static func moving(_ rings: [Ring], from source: Int, toDropRow dropRow: Int) -> [Ring] {
+        guard rings.indices.contains(source), dropRow >= 0, dropRow <= rings.count else { return rings }
         var result = rings
         let moved = result.remove(at: source)
-        // Removing an item before the target shifts the target one slot left.
-        // Insert at the original target index to place it after that row; for
-        // upward moves, insert directly at the target index.
-        let insertion = source < target ? min(target, result.count) : target
+        let insertion = min(source < dropRow ? dropRow - 1 : dropRow, result.count)
         result.insert(moved, at: insertion)
         return result
     }
@@ -55,6 +49,77 @@ struct VendorInfo: Codable, Identifiable, Hashable {
 struct SettingsInfo: Codable {
     let ringOrder: [String]
     let vendors: [VendorInfo]
+}
+
+struct UsageDay: Codable, Identifiable, Hashable {
+    let date: String
+    let inputTokens: Int
+    let outputTokens: Int
+    let cachedInputTokens: Int
+    let cacheWriteInputTokens: Int
+    let reasoningOutputTokens: Int
+    let totalTokens: Int
+    let requests: Int
+
+    var id: String { date }
+    var inputOutputTokens: Int { inputTokens + outputTokens }
+}
+
+struct UsageApp: Codable, Identifiable, Hashable {
+    let app: String
+    let inputTokens: Int
+    let outputTokens: Int
+    let cachedInputTokens: Int
+    let cacheWriteInputTokens: Int
+    let reasoningOutputTokens: Int
+    let totalTokens: Int
+    let requests: Int
+
+    var id: String { app }
+}
+
+struct UsageSourceStatus: Codable, Identifiable, Hashable {
+    let adapter: String
+    let available: Bool
+
+    var id: String { adapter }
+}
+
+struct UsageSummary: Codable {
+    let version: Int
+    let updatedAt: Int?
+    let today: UsageTotalsWithDate
+    let week: UsageWeek
+    let daily: [UsageDay]
+    let apps: [UsageApp]
+    let sources: [UsageSourceStatus]
+}
+
+struct UsageTotalsWithDate: Codable {
+    let date: String
+    let inputTokens: Int
+    let outputTokens: Int
+    let cachedInputTokens: Int
+    let cacheWriteInputTokens: Int
+    let reasoningOutputTokens: Int
+    let totalTokens: Int
+    let requests: Int
+
+    var inputOutputTokens: Int { inputTokens + outputTokens }
+}
+
+struct UsageWeek: Codable {
+    let startDate: String
+    let endDate: String
+    let inputTokens: Int
+    let outputTokens: Int
+    let cachedInputTokens: Int
+    let cacheWriteInputTokens: Int
+    let reasoningOutputTokens: Int
+    let totalTokens: Int
+    let requests: Int
+
+    var inputOutputTokens: Int { inputTokens + outputTokens }
 }
 
 struct PopoverLayout: Equatable {

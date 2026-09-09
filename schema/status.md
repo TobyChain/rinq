@@ -99,3 +99,20 @@ All user-facing quota values use `usedValue / totalValue`. `valueUnit` is
 real key); field parsing follows each vendor's published docs and degrades to
 `unknown` if the response shape differs. `codex` 5h/week comes from the local
 Codex ChatGPT login and the `chatgpt.com/backend-api/wham/usage` endpoint.
+
+GET /usage returns token counters from local native coding-agent logs. Rinq
+reads only structured usage metadata; it does not retain prompt text, assistant
+responses, tool arguments, or tool output. Browser and web-app sessions are not
+included.
+
+The response contains today, a rolling week, one daily record per day, an apps
+breakdown, and discovered sources. The counters are inputTokens,
+outputTokens, cachedInputTokens, cacheWriteInputTokens, reasoningOutputTokens,
+totalTokens, and requests.
+
+The default sources are ~/.codex/sessions, ~/.trae/cli/sessions, and
+~/.claude/projects. Set CODEX_HOME, TRAE_HOME/TRAECLI_HOME, or
+CLAUDE_CONFIG_DIR when a client stores logs elsewhere. Rinq uses an
+incremental index under ~/.rinq/usage.sqlite3 and scans 7 days by default.
+Optional usage.extraSources entries can add another supported local log root
+with an adapter and path.
