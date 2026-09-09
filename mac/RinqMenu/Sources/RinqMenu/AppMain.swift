@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-// RinqMenu: a menu-bar item showing the top three quota rings. Clicking opens
+// RinqMenu: a menu-bar item showing the configured quota rings. Clicking opens
 // a native SwiftUI popover with the dashboard and a Settings tab for adding
 // provider keys, toggling vendors, and managing ring order. Data comes from
 // the rinq daemon (http://127.0.0.1:<port>).
@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var timer: Timer?
 
     func applicationDidFinishLaunching(_ note: Notification) {
-        item = NSStatusBar.system.statusItem(withLength: 28)
+        item = NSStatusBar.system.statusItem(withLength: 30)
         item.button?.target = self
         item.button?.action = #selector(toggle(_:))
         store = Store()
@@ -33,11 +33,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggle(_ sender: Any?) {
         if let pop = popover, pop.isShown { pop.performClose(sender); return }
 
-        let root = NSHostingController(rootView: RootView(store: store))
+        let screenSize = item.button?.window?.screen?.visibleFrame.size
+            ?? NSScreen.main?.visibleFrame.size
+            ?? NSSize(width: 1440, height: 900)
+        let initialLayout = PopoverLayout.make(
+            ringCount: store.status?.rings.count ?? 0,
+            visibleScreenSize: screenSize
+        )
+        let root = NSHostingController(rootView: RootView(
+            store: store,
+            visibleScreenSize: screenSize,
+            onLayoutChange: { [weak self] layout in
+                self?.resizePopover(layout)
+            }
+        ))
         let pop = NSPopover()
         pop.behavior = .transient
-        pop.contentSize = NSSize(width: 360, height: 480)
+        pop.contentSize = NSSize(width: initialLayout.width, height: initialLayout.height)
         pop.contentViewController = root
+        popover = pop
         pop.show(relativeTo: item.button!.bounds, of: item.button!, preferredEdge: .minY)
 
         // Replace the popover's vibrant backdrop with a solid window-background
@@ -49,9 +63,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.makeOpaque(content)
             }
         }
-        popover = pop
-
         Task { await store.refresh() }
+    }
+
+    private func resizePopover(_ layout: PopoverLayout) {
+        guard let popover else { return }
+        let size = NSSize(width: layout.width, height: layout.height)
+        if popover.contentSize != size { popover.contentSize = size }
     }
 
     private func makeOpaque(_ view: NSView) {
@@ -74,7 +92,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Menu-bar icon shows all configured rings as concentric arcs.
         let pcts = rings.map { pct($0) }
         item.button?.image = Self.ringImage(pcts: pcts)
-        item.button?.image?.isTemplate = false
         item.button?.toolTip = rings.map { "\($0.label): \($0.usageText)" }.joined(separator: "\n")
     }
 
@@ -83,34 +100,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     static func ringImage(pcts: [Int]) -> NSImage {
-        let size = 22.0
+        let size: CGFloat = 24
         let image = NSImage(size: NSSize(width: size, height: size))
         image.lockFocus()
         let center = NSPoint(x: size / 2, y: size / 2)
-        let palette: [NSColor] = [.systemBlue, .systemPurple, .systemGreen, .systemOrange,
-                                  .systemTeal, .systemRed, .systemPink, .systemYellow]
-        // Fit however many rings the user has; collapse spacing as more are added.
-        let n = max(pcts.count, 1)
-        let lineWidth = min(2.6, (size - 4) / (CGFloat(n) * 2.4))
-        let step = lineWidth + 1.4
-        for (i, pct) in pcts.enumerated() {
-            let radius = (size / 2 - 2) - CGFloat(i) * step
-            guard radius > lineWidth else { break }
-            let color = palette[i % palette.count]
+        let visiblePcts = pcts.isEmpty ? [0] : pcts
+        let layout = MenuRingLayout.make(ringCount: visiblePcts.count, imageSize: size)
+        let step = layout.lineWidth + layout.gap
+        for (i, pct) in visiblePcts.enumerated() {
+            let radius = layout.outerRadius - CGFloat(i) * step
+            guard radius > layout.lineWidth / 2 else { break }
             let track = NSBezierPath()
-            color.withAlphaComponent(0.18).setStroke()
+            NSColor.black.withAlphaComponent(0.82).setStroke()
             track.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
-            track.lineWidth = lineWidth
+            track.lineWidth = layout.lineWidth
             track.stroke()
             let ring = NSBezierPath()
-            color.setStroke()
-            ring.lineWidth = lineWidth
+            NSColor.black.setStroke()
+            ring.lineWidth = layout.lineWidth
             ring.lineCapStyle = .round
             let p = CGFloat(pct) / 100.0
             ring.appendArc(withCenter: center, radius: radius, startAngle: -90, endAngle: -90 + 360 * p)
             ring.stroke()
         }
         image.unlockFocus()
+        // Template images let macOS choose the correct high-contrast black or
+        // white tint for transparent, colored, light, and dark menu bars.
+        image.isTemplate = true
         return image
     }
 }

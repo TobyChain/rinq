@@ -2,32 +2,49 @@ import SwiftUI
 
 struct DashboardView: View {
     @ObservedObject var store: Store
+    let layout: PopoverLayout
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 18) {
-                RingsView(rings: store.status?.rings ?? [])
-                    .padding(.top, 6)
-                VStack(spacing: 14) {
-                    ForEach(store.status?.rings ?? []) { ring in
-                        BarRow(ring: ring)
-                    }
-                    if (store.status?.rings ?? []).isEmpty {
-                        Text("No active rings. Add a provider in the Providers tab.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding()
-                    }
-                }
-                .padding(.horizontal)
-                Text(updated)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+        Group {
+            if layout.scrolls {
+                ScrollView { content }
+            } else {
+                content
             }
-            .padding(.bottom, 16)
-            .frame(maxWidth: .infinity)
         }
+    }
+
+    private var content: some View {
+        VStack(spacing: 8) {
+            RingsView(rings: store.status?.rings ?? [], diameter: layout.ringDiameter)
+                .padding(.top, 4)
+
+            LazyVGrid(
+                columns: Array(
+                    repeating: GridItem(.flexible(), spacing: 12),
+                    count: layout.columns
+                ),
+                spacing: 8
+            ) {
+                ForEach(store.status?.rings ?? []) { ring in
+                    BarRow(ring: ring, compact: layout.columns == 2)
+                }
+            }
+            .padding(.horizontal, 14)
+
+            if (store.status?.rings ?? []).isEmpty {
+                Text("No active rings. Add a provider in the Providers tab.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Text(updated)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 6)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var updated: String {

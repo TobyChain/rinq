@@ -43,6 +43,9 @@ quota as adaptive concentric rings; click it to open the single Rinq popover.
 The Rings tab shows every value as `used / total`; the Providers tab stores
 API keys locally, toggles vendors, and supports real drag-and-drop ring
 ordering. It polls `127.0.0.1:7788/status` every 30s and needs the daemon.
+The popover never exceeds half of the current screen's visible height: up to
+five quotas use one column; six or more switch to a compact two-column grid.
+Scrolling is only used when the resulting grid still cannot fit physically.
 
 It builds with the Swift compiler that ships with Xcode/CLT (no SwiftPM
 dependencies) and `install.sh` builds and launches it automatically as a

@@ -43,18 +43,24 @@ struct RingArc: View {
 
 struct BarRow: View {
     let ring: Ring
+    var compact = false
 
     private var pct: Int { ring.usedPercent ?? 0 }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: compact ? 8 : 12) {
             RingArc(ring: ring, lineWidth: 4)
-                .frame(width: 26, height: 26)
-            VStack(alignment: .leading, spacing: 3) {
+                .frame(width: compact ? 22 : 26, height: compact ? 22 : 26)
+            VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(ring.label).font(.system(size: 13, weight: .semibold))
+                    Text(ring.label)
+                        .font(.system(size: compact ? 11 : 13, weight: .semibold))
+                        .lineLimit(1)
                     Spacer()
-                    Text(ring.usageText).font(.system(size: 13, weight: .bold, design: .rounded))
+                    Text(ring.usageText)
+                        .font(.system(size: compact ? 10 : 13, weight: .bold, design: .rounded))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .foregroundStyle(Palette.color(ring.accent))
                 }
                 GeometryReader { geo in
@@ -65,9 +71,13 @@ struct BarRow: View {
                     }
                 }
                 .frame(height: 6)
-                Text(detail).font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(detail)
+                    .font(.system(size: compact ? 9 : 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
+        .frame(minHeight: 38)
     }
 
     private var detail: String {

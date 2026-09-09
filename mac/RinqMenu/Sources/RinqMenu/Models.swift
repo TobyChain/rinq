@@ -57,6 +57,58 @@ struct SettingsInfo: Codable {
     let vendors: [VendorInfo]
 }
 
+struct PopoverLayout: Equatable {
+    let width: CGFloat
+    let height: CGFloat
+    let columns: Int
+    let ringDiameter: CGFloat
+    let scrolls: Bool
+
+    static func make(ringCount: Int, visibleScreenSize: CGSize) -> PopoverLayout {
+        let count = max(ringCount, 0)
+        let columns = count >= 6 ? 2 : 1
+        let width = min(columns == 2 ? 620 : 380, max(320, visibleScreenSize.width - 32))
+        // NSPopover adds roughly 26 pt for its arrow and outer frame; reserve
+        // 28 pt so the complete popup (not just SwiftUI content) stays within
+        // half of the current screen's visible height.
+        let maxHeight = max(1, floor(visibleScreenSize.height * 0.5) - 28)
+        let rowCount = max(1, Int(ceil(Double(max(count, 1)) / Double(columns))))
+        let fixedHeight: CGFloat = 88
+        let rowHeight: CGFloat = 44
+        let preferredRing: CGFloat = count <= 3 ? 150 : (count <= 5 ? 110 : 118)
+        let availableRing = maxHeight - fixedHeight - CGFloat(rowCount) * rowHeight
+        let ringDiameter = min(preferredRing, max(64, availableRing))
+        let desiredHeight = fixedHeight + ringDiameter + CGFloat(rowCount) * rowHeight
+
+        return PopoverLayout(
+            width: width,
+            height: min(desiredHeight, maxHeight),
+            columns: columns,
+            ringDiameter: ringDiameter,
+            scrolls: desiredHeight > maxHeight
+        )
+    }
+}
+
+struct MenuRingLayout: Equatable {
+    let lineWidth: CGFloat
+    let gap: CGFloat
+    let outerRadius: CGFloat
+
+    static func make(ringCount: Int, imageSize: CGFloat = 24) -> MenuRingLayout {
+        let count = max(ringCount, 1)
+        let outerRadius = imageSize / 2 - 2.2
+        let innerRadius: CGFloat = 1.1
+        let gap: CGFloat = count <= 5 ? 0.5 : 0.25
+        let available = outerRadius - innerRadius - CGFloat(count - 1) * gap
+        return MenuRingLayout(
+            lineWidth: max(0.55, min(2.8, available / CGFloat(count))),
+            gap: gap,
+            outerRadius: outerRadius
+        )
+    }
+}
+
 enum Palette {
     static func color(_ name: String?) -> Color {
         switch name {
