@@ -5,23 +5,31 @@ final class Store: ObservableObject {
     @Published var status: Status?
     @Published var settings: SettingsInfo?
     @Published var usage: UsageSummary?
+    @Published var alerts: [QuotaAlert] = []
     @Published var drafts: [String: String] = [:]
     @Published var saving = false
 
     let port: Int
+    private var alertMonitor = QuotaAlertMonitor()
     private var base: String { "http://127.0.0.1:\(port)" }
 
     init(port: Int = Int(ProcessInfo.processInfo.environment["RINQ_PORT"] ?? "7788") ?? 7788) {
         self.port = port
     }
 
-    func refresh() async {
+    @discardableResult
+    func refresh() async -> Bool {
         async let s: Status? = fetch("/status")
         async let c: SettingsInfo? = fetch("/config")
         async let u: UsageSummary? = fetch("/usage")
-        status = await s
+        let fetchedStatus = await s
+        status = fetchedStatus
         settings = await c
         usage = await u
+        guard let fetchedStatus else { return false }
+        let evaluation = alertMonitor.evaluate(rings: fetchedStatus.rings)
+        alerts = evaluation.active
+        return evaluation.shouldPresent
     }
 
     func keyDraft(_ id: String) -> String { drafts[id] ?? "" }

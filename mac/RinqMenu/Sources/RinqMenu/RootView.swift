@@ -30,7 +30,8 @@ struct RootView: View {
     private var layout: PopoverLayout {
         PopoverLayout.make(
             ringCount: store.status?.rings.count ?? 0,
-            visibleScreenSize: visibleScreenSize
+            visibleScreenSize: visibleScreenSize,
+            hasAlerts: !store.alerts.isEmpty
         )
     }
 
@@ -48,6 +49,12 @@ struct RootView: View {
             .padding(.bottom, 10)
 
             Divider()
+
+            if !store.alerts.isEmpty {
+                AlertBanner(alerts: store.alerts)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+            }
 
             Group {
                 switch tab {

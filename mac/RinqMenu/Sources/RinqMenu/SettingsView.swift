@@ -16,7 +16,11 @@ struct DashboardView: View {
 
     private var content: some View {
         VStack(spacing: 8) {
-            RingsView(rings: store.status?.rings ?? [], diameter: layout.ringDiameter)
+            RingsView(
+                rings: store.status?.rings ?? [],
+                alerts: store.alerts,
+                diameter: layout.ringDiameter
+            )
                 .padding(.top, 4)
 
             LazyVGrid(
@@ -27,7 +31,11 @@ struct DashboardView: View {
                 spacing: 8
             ) {
                 ForEach(store.status?.rings ?? []) { ring in
-                    BarRow(ring: ring, compact: layout.columns == 2)
+                    BarRow(
+                        ring: ring,
+                        alerts: store.alerts,
+                        compact: layout.columns == 2
+                    )
                 }
             }
             .padding(.horizontal, 14)

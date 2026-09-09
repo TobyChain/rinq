@@ -11,6 +11,7 @@ struct Ring: Codable, Identifiable, Hashable {
     let remaining: Double?
     let currency: String?
     let resetsAt: Int?
+    let windowMins: Int?
     let accent: String?
     let spentUsd: Double?
     let budgetUsd: Double?
@@ -129,7 +130,11 @@ struct PopoverLayout: Equatable {
     let ringDiameter: CGFloat
     let scrolls: Bool
 
-    static func make(ringCount: Int, visibleScreenSize: CGSize) -> PopoverLayout {
+    static func make(
+        ringCount: Int,
+        visibleScreenSize: CGSize,
+        hasAlerts: Bool = false
+    ) -> PopoverLayout {
         let count = max(ringCount, 0)
         let columns = count >= 6 ? 2 : 1
         let width = min(columns == 2 ? 620 : 380, max(320, visibleScreenSize.width - 32))
@@ -138,7 +143,7 @@ struct PopoverLayout: Equatable {
         // half of the current screen's visible height.
         let maxHeight = max(1, floor(visibleScreenSize.height * 0.5) - 28)
         let rowCount = max(1, Int(ceil(Double(max(count, 1)) / Double(columns))))
-        let fixedHeight: CGFloat = 88
+        let fixedHeight: CGFloat = 88 + (hasAlerts ? 54 : 0)
         let rowHeight: CGFloat = 44
         let preferredRing: CGFloat = count <= 3 ? 150 : (count <= 5 ? 110 : 118)
         let availableRing = maxHeight - fixedHeight - CGFloat(rowCount) * rowHeight

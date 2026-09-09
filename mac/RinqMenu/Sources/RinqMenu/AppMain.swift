@@ -17,16 +17,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.target = self
         item.button?.action = #selector(toggle(_:))
         store = Store()
-        render(rings: [])
+        render(rings: [], alerts: [])
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                await self?.store.refresh()
-                self?.render(rings: self?.store.status?.rings ?? [])
+                guard let self else { return }
+                let shouldPresent = await self.store.refresh()
+                self.render(rings: self.store.status?.rings ?? [], alerts: self.store.alerts)
+                if shouldPresent { self.presentAlertPopover() }
             }
         }
         Task {
-            await store.refresh()
-            render(rings: store.status?.rings ?? [])
+            let shouldPresent = await store.refresh()
+            render(rings: store.status?.rings ?? [], alerts: store.alerts)
+            if shouldPresent { presentAlertPopover() }
         }
     }
 
@@ -63,7 +66,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.makeOpaque(content)
             }
         }
-        Task { await store.refresh() }
+        Task {
+            _ = await store.refresh()
+            render(rings: store.status?.rings ?? [], alerts: store.alerts)
+        }
+    }
+
+    private func presentAlertPopover() {
+        guard popover == nil || popover?.isShown == false else { return }
+        toggle(nil)
     }
 
     private func resizePopover(_ layout: PopoverLayout) {
@@ -88,11 +99,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.wantsLayer = true
     }
 
-    private func render(rings: [Ring]) {
+    private func render(rings: [Ring], alerts: [QuotaAlert]) {
         // The menu-bar icon shows one horizontal progress bar per quota. The
         // popover keeps its full Activity-style ring visualization.
         let pcts = rings.map { pct($0) }
-        item.button?.image = Self.progressBarImage(pcts: pcts)
+        let alertLevels = rings.map { ring in
+            alerts.first(where: { $0.ringID == ring.id })?.level
+        }
+        item.button?.image = Self.progressBarImage(pcts: pcts, alertLevels: alertLevels)
         item.button?.toolTip = rings.map { "\($0.label): \($0.usageText)" }.joined(separator: "\n")
     }
 
@@ -100,7 +114,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         r.fillPercent
     }
 
-    static func progressBarImage(pcts: [Int]) -> NSImage {
+    static func progressBarImage(
+        pcts: [Int],
+        alertLevels: [QuotaAlertLevel?] = []
+    ) -> NSImage {
         let imageSize = NSSize(width: 24, height: 18)
         let image = NSImage(size: imageSize)
         image.lockFocus()
@@ -121,7 +138,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             imageHeight: imageSize.height
         )
         for (i, pct) in visiblePcts.enumerated() {
-            let color = palette[i % palette.count]
+            let color: NSColor
+            if alertLevels.indices.contains(i), let level = alertLevels[i] {
+                color = level == .critical ? .systemRed : .systemOrange
+            } else {
+                color = palette[i % palette.count]
+            }
             let y = imageSize.height - layout.top - layout.barHeight
                 - CGFloat(i) * (layout.barHeight + layout.gap)
             let trackRect = NSRect(

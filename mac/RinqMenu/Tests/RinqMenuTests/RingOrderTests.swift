@@ -35,7 +35,7 @@ final class RingOrderTests: XCTestCase {
         Ring(
             id: id, label: id, vendor: nil, kind: "window", usedPercent: 0,
             remainingPercent: nil, remaining: nil, currency: nil, resetsAt: nil,
-            accent: "blue", spentUsd: nil, budgetUsd: nil, usedValue: 0,
+            windowMins: 300, accent: "blue", spentUsd: nil, budgetUsd: nil, usedValue: 0,
             totalValue: 100, valueUnit: "percent", status: nil
         )
     }
@@ -76,7 +76,9 @@ final class PopoverLayoutTests: XCTestCase {
 final class MenuBarLayoutTests: XCTestCase {
     @MainActor
     func testMenuIconPreservesPerBarColors() {
-        XCTAssertFalse(AppDelegate.progressBarImage(pcts: [10, 50, 90]).isTemplate)
+        XCTAssertFalse(AppDelegate.progressBarImage(
+            pcts: [10, 50, 90], alertLevels: [nil, .warning, .critical]
+        ).isTemplate)
     }
 
     func testEmptyStateStillCreatesOneVisibleBar() {
@@ -98,5 +100,61 @@ final class MenuBarLayoutTests: XCTestCase {
             + CGFloat(count - 1) * layout.gap
         XCTAssertGreaterThanOrEqual(layout.barHeight, 1)
         XCTAssertLessThanOrEqual(layout.top * 2 + contentHeight, 18)
+    }
+}
+
+final class QuotaAlertTests: XCTestCase {
+    func testExhaustedQuotaIsCritical() {
+        var monitor = QuotaAlertMonitor(defaults: isolatedDefaults())
+        let result = monitor.evaluate(rings: [ring("codex-5h", used: 100, window: 300)])
+        XCTAssertEqual(result.active.first?.reason, .exhausted)
+        XCTAssertEqual(result.active.first?.level, .critical)
+        XCTAssertTrue(result.shouldPresent)
+    }
+
+    func testFiveHourLowQuotaIsWarning() {
+        var monitor = QuotaAlertMonitor(defaults: isolatedDefaults())
+        let result = monitor.evaluate(rings: [ring("codex-5h", used: 71, window: 300)])
+        XCTAssertEqual(result.active.first?.reason, .lowQuota)
+        XCTAssertEqual(result.active.first?.level, .warning)
+    }
+
+    func testWeeklyLowQuotaUsesTenPercentThreshold() {
+        var monitor = QuotaAlertMonitor(defaults: isolatedDefaults())
+        let result = monitor.evaluate(rings: [ring("codex-week", used: 91, window: 10080)])
+        XCTAssertEqual(result.active.first?.reason, .lowQuota)
+    }
+
+    func testRapidUsageRequiresMoreThanTwentyPercentInThirtyMinutes() {
+        var monitor = QuotaAlertMonitor(defaults: isolatedDefaults())
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        _ = monitor.evaluate(rings: [ring("codex-5h", used: 10, window: 300)], now: start)
+        let result = monitor.evaluate(
+            rings: [ring("codex-5h", used: 31, window: 300)],
+            now: start.addingTimeInterval(30 * 60)
+        )
+        XCTAssertEqual(result.active.first?.reason, .rapidUsage)
+        XCTAssertTrue(result.shouldPresent)
+    }
+
+    func testExistingAlertDoesNotPresentAgainUntilItResets() {
+        var monitor = QuotaAlertMonitor(defaults: isolatedDefaults())
+        let ring = ring("codex-5h", used: 100, window: 300)
+        XCTAssertTrue(monitor.evaluate(rings: [ring]).shouldPresent)
+        XCTAssertFalse(monitor.evaluate(rings: [ring]).shouldPresent)
+    }
+
+    private func isolatedDefaults() -> UserDefaults {
+        let suite = "rinq-alert-tests-\(UUID().uuidString)"
+        return UserDefaults(suiteName: suite)!
+    }
+
+    private func ring(_ id: String, used: Int, window: Int) -> Ring {
+        Ring(
+            id: id, label: id, vendor: "codex", kind: "window", usedPercent: used,
+            remainingPercent: 100 - used, remaining: nil, currency: nil, resetsAt: nil,
+            windowMins: window, accent: "blue", spentUsd: nil, budgetUsd: nil,
+            usedValue: Double(used), totalValue: 100, valueUnit: "percent", status: nil
+        )
     }
 }
