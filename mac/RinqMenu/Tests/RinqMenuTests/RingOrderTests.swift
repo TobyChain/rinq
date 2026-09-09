@@ -73,29 +73,30 @@ final class PopoverLayoutTests: XCTestCase {
     }
 }
 
-final class MenuRingLayoutTests: XCTestCase {
+final class MenuBarLayoutTests: XCTestCase {
     @MainActor
-    func testMenuIconPreservesPerRingColors() {
-        XCTAssertFalse(AppDelegate.ringImage(pcts: [10, 50, 90]).isTemplate)
+    func testMenuIconPreservesPerBarColors() {
+        XCTAssertFalse(AppDelegate.progressBarImage(pcts: [10, 50, 90]).isTemplate)
     }
 
-    func testEmptyStateStillCreatesOneVisibleRing() {
-        let layout = MenuRingLayout.make(ringCount: 0)
-        XCTAssertGreaterThan(layout.lineWidth, 2)
-        XCTAssertGreaterThan(layout.outerRadius, layout.lineWidth)
+    func testEmptyStateStillCreatesOneVisibleBar() {
+        let layout = MenuBarLayout.make(ringCount: 0)
+        XCTAssertEqual(layout.barHeight, 3)
+        XCTAssertEqual(layout.barWidth, 22)
     }
 
-    func testFiveRingsRemainVisible() {
-        let layout = MenuRingLayout.make(ringCount: 5)
-        let innermostCenter = layout.outerRadius - 4 * (layout.lineWidth + layout.gap)
-        XCTAssertGreaterThan(layout.lineWidth, 1)
-        XCTAssertGreaterThan(innermostCenter, layout.lineWidth / 2)
+    func testFiveBarsRemainReadable() {
+        let layout = MenuBarLayout.make(ringCount: 5)
+        XCTAssertGreaterThanOrEqual(layout.barHeight, 2)
+        XCTAssertEqual(layout.gap, 1)
     }
 
-    func testManyRingsStayInsideIcon() {
-        let layout = MenuRingLayout.make(ringCount: 8)
-        let innermostCenter = layout.outerRadius - 7 * (layout.lineWidth + layout.gap)
-        XCTAssertGreaterThanOrEqual(layout.lineWidth, 0.55)
-        XCTAssertGreaterThan(innermostCenter, layout.lineWidth / 2)
+    func testManyBarsStayInsideIcon() {
+        let count = 8
+        let layout = MenuBarLayout.make(ringCount: count)
+        let contentHeight = CGFloat(count) * layout.barHeight
+            + CGFloat(count - 1) * layout.gap
+        XCTAssertGreaterThanOrEqual(layout.barHeight, 1)
+        XCTAssertLessThanOrEqual(layout.top * 2 + contentHeight, 18)
     }
 }

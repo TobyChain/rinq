@@ -155,21 +155,29 @@ struct PopoverLayout: Equatable {
     }
 }
 
-struct MenuRingLayout: Equatable {
-    let lineWidth: CGFloat
+struct MenuBarLayout: Equatable {
+    let barWidth: CGFloat
+    let barHeight: CGFloat
     let gap: CGFloat
-    let outerRadius: CGFloat
+    let top: CGFloat
 
-    static func make(ringCount: Int, imageSize: CGFloat = 24) -> MenuRingLayout {
+    static func make(
+        ringCount: Int,
+        imageWidth: CGFloat = 24,
+        imageHeight: CGFloat = 18
+    ) -> MenuBarLayout {
         let count = max(ringCount, 1)
-        let outerRadius = imageSize / 2 - 2.2
-        let innerRadius: CGFloat = 1.1
-        let gap: CGFloat = count <= 5 ? 0.5 : 0.25
-        let available = outerRadius - innerRadius - CGFloat(count - 1) * gap
-        return MenuRingLayout(
-            lineWidth: max(0.55, min(2.8, available / CGFloat(count))),
+        let horizontalInset: CGFloat = 1
+        let verticalInset: CGFloat = 1
+        let gap: CGFloat = count <= 5 ? 1 : 0.5
+        let availableHeight = imageHeight - verticalInset * 2 - CGFloat(count - 1) * gap
+        let barHeight = max(1, min(3, availableHeight / CGFloat(count)))
+        let contentHeight = CGFloat(count) * barHeight + CGFloat(count - 1) * gap
+        return MenuBarLayout(
+            barWidth: imageWidth - horizontalInset * 2,
+            barHeight: barHeight,
             gap: gap,
-            outerRadius: outerRadius
+            top: (imageHeight - contentHeight) / 2
         )
     }
 }

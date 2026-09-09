@@ -89,9 +89,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func render(rings: [Ring]) {
-        // Menu-bar icon shows all configured rings as concentric arcs.
+        // The menu-bar icon shows one horizontal progress bar per quota. The
+        // popover keeps its full Activity-style ring visualization.
         let pcts = rings.map { pct($0) }
-        item.button?.image = Self.ringImage(pcts: pcts)
+        item.button?.image = Self.progressBarImage(pcts: pcts)
         item.button?.toolTip = rings.map { "\($0.label): \($0.usageText)" }.joined(separator: "\n")
     }
 
@@ -99,11 +100,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         r.fillPercent
     }
 
-    static func ringImage(pcts: [Int]) -> NSImage {
-        let size: CGFloat = 24
-        let image = NSImage(size: NSSize(width: size, height: size))
+    static func progressBarImage(pcts: [Int]) -> NSImage {
+        let imageSize = NSSize(width: 24, height: 18)
+        let image = NSImage(size: imageSize)
         image.lockFocus()
-        let center = NSPoint(x: size / 2, y: size / 2)
         let palette: [NSColor] = [
             NSColor(calibratedRed: 0.00, green: 0.52, blue: 1.00, alpha: 1),
             NSColor(calibratedRed: 0.53, green: 0.37, blue: 1.00, alpha: 1),
@@ -115,28 +115,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSColor(calibratedRed: 1.00, green: 0.82, blue: 0.04, alpha: 1),
         ]
         let visiblePcts = pcts.isEmpty ? [0] : pcts
-        let layout = MenuRingLayout.make(ringCount: visiblePcts.count, imageSize: size)
-        let step = layout.lineWidth + layout.gap
+        let layout = MenuBarLayout.make(
+            ringCount: visiblePcts.count,
+            imageWidth: imageSize.width,
+            imageHeight: imageSize.height
+        )
         for (i, pct) in visiblePcts.enumerated() {
-            let radius = layout.outerRadius - CGFloat(i) * step
-            guard radius > layout.lineWidth / 2 else { break }
             let color = palette[i % palette.count]
-            let track = NSBezierPath()
-            color.withAlphaComponent(0.48).setStroke()
-            track.appendArc(withCenter: center, radius: radius, startAngle: 0, endAngle: 360)
-            track.lineWidth = layout.lineWidth
-            track.stroke()
-            let ring = NSBezierPath()
-            color.withAlphaComponent(0.96).setStroke()
-            ring.lineWidth = layout.lineWidth
-            ring.lineCapStyle = .round
-            let p = CGFloat(pct) / 100.0
-            ring.appendArc(withCenter: center, radius: radius, startAngle: -90, endAngle: -90 + 360 * p)
-            ring.stroke()
+            let y = imageSize.height - layout.top - layout.barHeight
+                - CGFloat(i) * (layout.barHeight + layout.gap)
+            let trackRect = NSRect(
+                x: 1,
+                y: y,
+                width: layout.barWidth,
+                height: layout.barHeight
+            )
+            color.withAlphaComponent(0.42).setFill()
+            NSBezierPath(
+                roundedRect: trackRect,
+                xRadius: layout.barHeight / 2,
+                yRadius: layout.barHeight / 2
+            ).fill()
+
+            let progress = CGFloat(max(0, min(100, pct))) / 100
+            guard progress > 0 else { continue }
+            let fillRect = NSRect(
+                x: trackRect.minX,
+                y: trackRect.minY,
+                width: max(layout.barHeight, trackRect.width * progress),
+                height: trackRect.height
+            )
+            color.withAlphaComponent(0.96).setFill()
+            NSBezierPath(
+                roundedRect: fillRect,
+                xRadius: layout.barHeight / 2,
+                yRadius: layout.barHeight / 2
+            ).fill()
         }
         image.unlockFocus()
-        // Preserve per-ring colors. The translucent track remains visible
-        // while the nearly opaque used arc carries the actual quota value.
+        // Preserve per-provider colors instead of letting macOS template the
+        // stacked bars into a single monochrome symbol.
         image.isTemplate = false
         return image
     }
