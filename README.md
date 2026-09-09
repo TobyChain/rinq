@@ -1,240 +1,145 @@
 # Rinq
 
-A glanceable "token battery" for AI quota, like the Activity rings but each
-ring is a vendor limit (5h window, weekly window, prepaid balance, spend
-budget). It runs as a **standalone iOS app + home/lock-screen widget** and a
-**watchOS app + complication** — no Mac required: the app fetches each vendor
-directly. Keys are entered once on the iPhone and stay on device in the App
-Group container.
+🇬🇧 English · [🇨🇳 简体中文](README.zh-CN.md)
 
-```
-iPhone app / widgets  ──direct HTTPS──►  vendor quota endpoints
-Apple Watch app/complication  (same code, same keys, each fetches directly)
-```
+Rinq is a glanceable AI quota monitor for Apple devices. It turns provider
+limits, balances, and local coding-agent token usage into Activity-style rings
+and compact bars.
 
-An optional **Mac web dashboard** (`mac/`) also exists: it runs a tiny local
-server that serves the same rings in a phone-friendly web page — no app
-install and no code signing, just open the URL on your iPhone.
+Rinq has two independent paths:
 
-## Zero-install option: Mac web dashboard
+- iPhone, iPad, and Apple Watch apps fetch configured provider quotas directly
+  over HTTPS.
+- The optional macOS menu-bar app reads local provider credentials and local
+  coding-agent logs through a loopback daemon.
 
-If you'd rather not build/sign anything, run the collector on your Mac and
-open the dashboard from any browser on the same network:
+## macOS quick start
 
-```bash
-./install.sh                       # installs CLI + launchd daemon (loopback)
-rinq serve --host 0.0.0.0          # or: bind the daemon to your LAN
-```
+The macOS path is the easiest way to try Rinq:
 
-- On the Mac: <http://127.0.0.1:7788/>
-- On your iPhone/iPad (same Wi-Fi): `http://<mac-lan-ip>:7788/` — the command
-  prints this address. Add it to your iPhone Home Screen for an app-like view.
-- The page polls `/status` every 60s and shows the same Activity-style rings
-  and per-vendor bars. To keep it always reachable, set `"host": "0.0.0.0"` in
-  `~/.rinq/config.json` and the launchd daemon will bind to the LAN.
+~~~bash
+git clone https://github.com/TobyChain/rinq.git
+cd rinq
+./install.sh
+~~~
 
-No auth is built in: only expose it on a trusted network. It never displays
-your keys — only quota percentages and amounts.
+install.sh installs the rinq CLI, starts the local daemon, builds the menu-bar
+app, and registers both as launchd agents. Click the Rinq icon in the menu bar
+to open the popover.
 
-## macOS menu bar app
+The menu-bar app includes:
 
-A native menu-bar item (`mac/RinqMenu/`, Swift + AppKit) shows every configured
-quota as adaptive concentric rings; click it to open the single Rinq popover.
-The Rings tab shows every value as `used / total`; the Providers tab stores
-API keys locally, toggles vendors, and supports real drag-and-drop ring
-ordering. It polls `127.0.0.1:7788/status` every 30s and needs the daemon.
-The popover never exceeds half of the current screen's visible height: up to
-five quotas use one column; six or more switch to a compact two-column grid.
-Scrolling is only used when the resulting grid still cannot fit physically.
+- Rings: configured provider quotas as adaptive colored rings and bars;
+- Usage: daily and rolling-week input/output tokens from local coding agents;
+- Providers: local credential setup, vendor toggles, and drag-to-reorder.
 
-It builds with the Swift compiler that ships with Xcode/CLT (no SwiftPM
-dependencies) and `install.sh` builds and launches it automatically as a
-launchd agent (`com.rinq.menu`):
+The daemon listens on 127.0.0.1:7788 by default. Useful local endpoints are
+/status, /usage, and /config. The detailed JSON contracts are in
+[schema/status.md](schema/status.md).
 
-```bash
-./install.sh                       # builds + starts daemon and menu app
-```
+To update an existing installation:
 
-Manual:
+~~~bash
+git pull
+./install.sh
+~~~
 
-```bash
-mac/RinqMenu/build.sh              # build release into ~/.rinq/bin/RinqMenu
-~/.rinq/bin/RinqMenu               # run it (foreground for testing)
-```
+## Local token usage
 
-Set `RINQ_PORT` if you run the daemon on a non-default port. Rebuild after
-`git pull`. No App Store / signing involved — it runs locally from source.
+The macOS Usage tab reads structured token counters from native local coding
+agents. It does not read browser sessions and does not store prompts,
+responses, tool arguments, or tool output.
 
-## The apps (standalone)
+Default log locations:
 
-Build the Xcode project (XcodeGen) and run on the iOS simulator:
+- Codex: ~/.codex/sessions
+- TraeX: ~/.trae/cli/sessions
+- Claude Code: ~/.claude/projects
 
-```bash
-make ios-build      # build iOS app + widget for the simulator
-make ios-sim        # boot an iPhone simulator, install, and launch
-make watch-build    # build the watchOS app + complication
-```
+Rinq supports CODEX_HOME, TRAE_HOME, TRAECLI_HOME, and CLAUDE_CONFIG_DIR for
+non-standard locations. The incremental index is stored locally at
+~/.rinq/usage.sqlite3; seven days are scanned by default.
 
-On first launch open Settings (key icon), enable a vendor and paste its key:
+Local usage is separate from provider subscription quota. A token counter can
+exist even when a provider does not expose a public quota endpoint.
 
-- **DeepSeek / MiniMax / Kimi / GLM**: paste the provider API key.
-- **OpenAI spend**: paste an Admin key.
-- **ChatGPT / Codex (experimental)**: paste a ChatGPT access token. This uses
-  the unofficial `chatgpt.com/backend-api/wham/usage` endpoint with your own
-  account. It works when you self-build/sideload, but is **not App-Store
-  eligible** and may break if OpenAI changes the endpoint. Disabled by default.
+## Provider quotas
 
-Widgets refresh on the system schedule (~15 min). The watch app and
-complication use the same provider code; keys entered on the iPhone are stored
-in the App Group and shared with the iOS widget extension. (Cross-device
-sharing to the watch uses iCloud Keychain when you enable the entitlement with
-a paid team; otherwise enter keys on each device.)
+The current collectors cover:
 
-### On-device widget providers
-
-| provider | endpoint | kind |
+| Provider | Displayed data | Credential source |
 | --- | --- | --- |
-| ChatGPT/Codex | `chatgpt.com/backend-api/wham/usage` | 5h + week windows |
-| MiniMax | `api.minimaxi.com/v1/api/openplatform/coding_plan/remains` | 5h + week windows |
-| DeepSeek | `api.deepseek.com/user/balance` | CNY balance |
-| Kimi (Moonshot) | `api.moonshot.cn/v1/users/me/balance` | CNY balance |
-| GLM (Zhipu) | `open.bigmodel.cn/api/monitor/usage/quota/limit` | CNY balance |
-| OpenAI | `api.openai.com/v1/organization/costs` | monthly USD spend |
+| ChatGPT / Codex | 5-hour and weekly windows | Local Codex login |
+| MiniMax | Coding Plan 5-hour and weekly windows | API key or cc-switch |
+| OpenAI API | Organization spend | Admin API key |
+| DeepSeek | Balance | API key or cc-switch |
+| Kimi / Moonshot | Balance | API key |
+| GLM / Zhipu | Balance | API key |
+| Xiaomi MiMo | Balance when a supported endpoint is available | API key |
+| Claude API | Organization spend when configured | Admin API key |
 
-## Distribution
+Providers without a usable credential are hidden. All values use the same
+direction: used / total. Balance rings use the configured balanceFull value as
+their reference total.
 
-There is no "download a .app from GitHub" for iOS/watchOS. This repo is
-**source-only**: clone, open `app/Rinq.xcodeproj` (generated by XcodeGen), set
-your team, and build to your own devices.
+macOS provider settings are stored locally in ~/.rinq/config.json with
+restrictive file permissions. Rinq sends credentials only to the matching
+provider endpoint. Do not commit ~/.rinq/config.json or any API key.
 
-- Free Apple ID: sideload via Xcode, re-signs every 7 days; no push.
-- Paid Apple Developer Program: set `DEVELOPMENT_TEAM` in `app/project.yml`,
-  `make ios-generate`, build to device; signatures last a year.
-- App Store: the official-API providers are fine; the ChatGPT experimental
-  ring must not be included in an App Store build (unofficial endpoint).
+## iOS and watchOS
 
-## Layout
+The Apple apps are source-only and do not require a Mac at runtime. They share
+the provider models and ring views, and include an iOS widget plus a watchOS
+complication.
 
-```
-app/Shared/     Swift models, ring views, settings, vendor providers
-app/iOS/        iPhone app (rings + provider settings)
-app/iOSWidget/  home-screen + lock-screen widget
-app/Watch/      watchOS app
-app/WatchWidget/ watch complication
-mac/rinq/       optional Mac CLI/daemon (relay, hooks, cc-switch reading)
-schema/         status JSON contract
-```
+Generate the Xcode project and build for simulators:
 
-See `schema/status.md` for the ring/event contract.
+~~~bash
+make ios-build
+make watch-build
+~~~
 
+For a physical device, open the generated app/Rinq.xcodeproj in Xcode and
+select your development team. A free Apple ID is suitable for local testing
+but requires periodic re-signing; a paid team is needed for longer-lived
+device installs and iCloud Keychain sharing.
 
-### Local coding-agent token usage
+The ChatGPT/Codex collector uses an unofficial endpoint and is intended for
+self-built or sideloaded builds. Do not include it in an App Store build.
 
-The macOS daemon also exposes a local /usage endpoint and the menu-bar
-popover Usage tab. It reads input and output token counters from local native
-coding-agent logs, including Codex, TraeX, and Claude Code when those directories
-exist. Browser sessions are excluded. Rinq stores only normalized counters and
-source metadata in ~/.rinq/usage.sqlite3; prompt text, responses, tool
-arguments, and tool output are not stored.
+## Configuration
 
-Default log locations are ~/.codex/sessions, ~/.trae/cli/sessions, and
-~/.claude/projects. Set CODEX_HOME, TRAE_HOME or TRAECLI_HOME, and
-CLAUDE_CONFIG_DIR when a client uses another location. The default lookback is
-7 days and can be changed with usage.lookbackDays in ~/.rinq/config.json.
-Supported extra roots can be added with usage.extraSources entries containing an
-adapter and path. See schema/status.md for the /usage response contract.
+The macOS daemon creates ~/.rinq/config.json on first run. A minimal example:
 
-## Hooking agents
-
-TraeX — merge `hooks/traex.hooks.json` into your user `hooks.json` (or the
-project `.trae/hooks.json`). Then confirm with `/hooks` inside TraeX.
-
-Codex CLI — append the line in `hooks/codex.notify.toml.snippet` to
-`~/.codex/config.toml`.
-
-Manual event (works without hooks):
-
-```bash
-rinq push --state started   --title "noteone build"
-rinq push --state waiting   --title "noteone build" --detail "needs approval"
-rinq push --state completed --title "noteone build" --detail "42 tests passed"
-```
-
-## Real watch deploy
-
-The simulator build needs no signing. A physical watch needs a team:
-
-- Free Apple ID: open `app/Rinq.xcodeproj` in Xcode, set your Personal
-  Team on both targets, run to the watch. Re-signs every 7 days; no APNs.
-- Paid Apple Developer Program: set `DEVELOPMENT_TEAM` in `app/project.yml`,
-  regenerate, then one command builds + installs over the network:
-
-```bash
-make watch-generate
-xcodebuild -project app/Rinq.xcodeproj -scheme RinqWatchApp \
-  -destination 'platform=watchOS,name=<your watch>' build
-```
-
-Then on the watch: set the watch face to a modular/Utility face, add the
-Rinq complication (the circular gauge renders the rings). Turn off
-`Settings > General > Nightstand Mode` so the face shows while charging. Point
-the app at your Mac's reachable HTTPS status URL (the relay), or leave the
-sample data.
-
-## Data sources
-
-`~/.rinq/config.json` controls collectors. By default the real collectors are
-on and auto-discover credentials:
-
-```json
+~~~json
 {
-  "collectors": ["codex", "minimax", "deepseek", "openai", "anthropic", "moonshot", "zhipu", "xiaomi"],
-  "budgetUsd": { "openai": 20.0, "anthropic": 20.0 },
-  "balanceFull": { "deepseek": 100.0, "moonshot": 100.0, "zhipu": 100.0 }
+  "collectors": ["codex", "minimax", "deepseek", "openai"],
+  "budgetUsd": { "openai": 20.0 },
+  "balanceFull": { "deepseek": 100.0 },
+  "usage": { "lookbackDays": 7 }
 }
-```
+~~~
 
-Set `"collectors": ["mock"]` for synthetic demo data with no network calls.
+Set `collectors` to ["mock"] to show synthetic data without provider network
+requests. Use `usage.extraSources` only when a supported coding agent stores its
+JSONL logs outside the standard directories.
 
-One display convention:
+## Development
 
-- Every value is shown as `used / total`, and every ring fills by the used
-  share. Examples: `8% / 100%`, `13 / 100 requests`, `$7.42 / $20.00`,
-  `¥7.43 / ¥100.00`.
+~~~bash
+cd mac
+python3 -m unittest test_rinq
 
-Source semantics:
+cd RinqMenu
+swift test
+swift build -c release
+~~~
 
-- **window / budget** (subscription quota, postpaid spend) — the ring fills as
-  you *consume*. `window` = rate-limit window (5h/week); `budget` = USD spend
-  vs a monthly cap.
-- **balance** (prepaid CNY balance on Chinese vendors) — Rinq converts the
-  remaining balance to used (`balanceFull - remaining`) so it follows the same
-  used/total direction. Set `balanceFull.<vendor>` to the reference top-up.
+The repository also contains the iOS/watchOS source, provider adapters, local
+hooks, and the public status schema. Contributions should keep credentials
+local, preserve explicit offline/error states, and avoid adding provider-
+specific secrets to source control.
 
-Credential discovery (`mac/rinq/sources.py`):
+## License
 
-- **codex** and **minimax** / **deepseek** need no env setup. Rinq reads your
-  local **cc-switch** database (`~/.cc-switch/cc-switch.db`) for API keys and
-  your Codex ChatGPT login (`~/.codex/auth.json`) for the OAuth access token.
-  Override paths with `RINQ_CCSWITCH_DB` / `RINQ_CODEX_AUTH`.
-- Other vendors read env keys (`launchctl setenv KEY value` or the launchd
-  environment) and show `unknown` until a key is present. Never commit keys.
-
-| collector | credential | source | status |
-| --- | --- | --- | --- |
-| `codex` | ChatGPT OAuth (`auth.json`) | `chatgpt.com/backend-api/wham/usage` | live: 5h + week `used_percent` |
-| `minimax` | cc-switch key | `api.minimaxi.com/v1/api/openplatform/coding_plan/remains` | live: 5h + week remaining% |
-| `deepseek` | cc-switch / `DEEPSEEK_API_KEY` | `api.deepseek.com/user/balance` | live: CNY balance |
-| `openai` | `OPENAI_ADMIN_KEY` | `/v1/organization/costs` | live |
-| `moonshot` (Kimi) | `MOONSHOT_API_KEY` | `api.moonshot.cn/v1/users/me/balance` | route verified, field best-effort |
-| `zhipu` (GLM) | `ZHIPU_API_KEY` | `open.bigmodel.cn/api/monitor/usage/quota/limit` | route verified, field best-effort |
-| `xiaomi` (MiMo) | `XIAOMI_API_KEY` | no confirmed public route | shows unknown |
-| `anthropic` (Claude) | `ANTHROPIC_ADMIN_KEY` | Admin Usage & Cost API (org only) | interface stub |
-
-MiniMax and Codex return real subscription *windows* (5-hour and weekly), not
-prepaid balances, so they render as `window` rings. Endpoints that returned
-`401` to an unauthenticated probe are confirmed auth-gated; field parsing
-follows each vendor's response and degrades to `unknown` if the shape differs.
-
-
-
+Rinq is licensed under the [Apache License 2.0](LICENSE).
