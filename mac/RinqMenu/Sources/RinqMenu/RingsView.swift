@@ -152,6 +152,9 @@ struct AlertBanner: View {
                     .lineLimit(2)
             }
             Spacer(minLength: 0)
+            Image(systemName: "xmark")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.secondary)
         }
         .foregroundStyle(highestLevel == .critical ? .red : .orange)
         .padding(.horizontal, 10)

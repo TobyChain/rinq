@@ -48,6 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             visibleScreenSize: screenSize,
             onLayoutChange: { [weak self] layout in
                 self?.resizePopover(layout)
+            },
+            onAlertsDismissed: { [weak self] in
+                guard let self else { return }
+                self.render(rings: self.store.status?.rings ?? [], alerts: self.store.alerts)
             }
         ))
         let pop = NSPopover()

@@ -61,6 +61,11 @@ final class Store: ObservableObject {
         await patch(["ringOrder": ids])
     }
 
+    func dismissAlerts() {
+        alertMonitor.dismiss(alertIDs: Set(alerts.map(\.id)))
+        alerts = []
+    }
+
     @discardableResult
     private func patch(_ body: [String: Any]) async -> SettingsInfo? {
         guard let url = URL(string: "\(base)/config"),

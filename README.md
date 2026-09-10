@@ -29,8 +29,8 @@ to open the popover.
 
 The menu-bar app includes:
 
-- Rings: configured provider quotas as adaptive colored rings and bars;
-- Usage: daily and rolling-week input/output tokens from local coding agents;
+- Rings: configured provider quotas as adaptive colored rings and bars; click a quota alert banner to dismiss it until that quota condition clears;
+- Usage: daily and rolling-week input/output tokens from local coding agents; hover a daily bar group to see that day's exact input and output counts;
 - Providers: local credential setup, vendor toggles, and drag-to-reorder.
 
 The daemon listens on 127.0.0.1:7788 by default. Useful local endpoints are

@@ -25,6 +25,7 @@ struct RootView: View {
     @ObservedObject var store: Store
     let visibleScreenSize: CGSize
     let onLayoutChange: (PopoverLayout) -> Void
+    let onAlertsDismissed: () -> Void
     @State private var tab: RinqTab = .rings
 
     private var layout: PopoverLayout {
@@ -51,9 +52,17 @@ struct RootView: View {
             Divider()
 
             if !store.alerts.isEmpty {
-                AlertBanner(alerts: store.alerts)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
+                Button {
+                    store.dismissAlerts()
+                    onAlertsDismissed()
+                } label: {
+                    AlertBanner(alerts: store.alerts)
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss until the quota condition clears")
+                .accessibilityLabel("Dismiss quota alert")
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
             }
 
             Group {

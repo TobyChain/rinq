@@ -26,8 +26,8 @@ install.sh 会安装 rinq 命令、启动本地 daemon、构建菜单栏应用�
 
 菜单栏应用包含三个页面：
 
-- Rings：以自适应的彩色圆环和进度条显示已配置的厂商额度；
-- Usage：显示本地 coding agent 当日及滚动一周的 input/output tokens；
+- Rings：以自适应的彩色圆环和进度条显示已配置的厂商额度；告警横幅可点击消除，并在额度状态恢复后重新启用告警；
+- Usage：显示本地 coding agent 当日及滚动一周的 input/output tokens；悬停每日柱组可查看当天的准确 input/output 用量；
 - Providers：配置本地凭据、启用或隐藏厂商，并拖拽调整圆环顺序。
 
 daemon 默认监听 127.0.0.1:7788。主要本地接口为 /status、/usage 和

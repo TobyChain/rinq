@@ -47,6 +47,7 @@ struct QuotaAlertMonitor {
     private struct State: Codable {
         var samples: [String: [UsageSample]] = [:]
         var activeAlertIDs: Set<String> = []
+        var dismissedAlertIDs: Set<String>?
     }
 
     private let defaults: UserDefaults
@@ -76,15 +77,27 @@ struct QuotaAlertMonitor {
             }
         }
 
-        let activeIDs = Set(active.map(\.id))
+        let detectedIDs = Set(active.map(\.id))
+        let dismissedIDs = (state.dismissedAlertIDs ?? []).intersection(detectedIDs)
+        let visible = active.filter { !dismissedIDs.contains($0.id) }
+        let activeIDs = Set(visible.map(\.id))
         let shouldPresent = !activeIDs.subtracting(state.activeAlertIDs).isEmpty
         state.samples = currentSamples
         state.activeAlertIDs = activeIDs
+        state.dismissedAlertIDs = dismissedIDs
         persist()
         return QuotaAlertEvaluation(
-            active: active.sorted { $0.level.priority > $1.level.priority },
+            active: visible.sorted { $0.level.priority > $1.level.priority },
             shouldPresent: shouldPresent
         )
+    }
+
+    mutating func dismiss(alertIDs: Set<String>) {
+        var dismissed = state.dismissedAlertIDs ?? []
+        dismissed.formUnion(alertIDs)
+        state.dismissedAlertIDs = dismissed
+        state.activeAlertIDs.subtract(alertIDs)
+        persist()
     }
 
     private func alert(for ring: Ring, usedPercent: Int, now: Date) -> QuotaAlert? {

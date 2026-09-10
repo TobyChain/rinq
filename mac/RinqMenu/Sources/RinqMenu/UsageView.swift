@@ -82,6 +82,7 @@ private struct UsageMetric: View {
 
 private struct DailyUsageView: View {
     let days: [UsageDay]
+    @State private var hoveredDayID: String?
 
     private var maximum: Int {
         max(days.map(\.inputOutputTokens).max() ?? 0, 1)
@@ -91,6 +92,22 @@ private struct DailyUsageView: View {
         VStack(alignment: .leading, spacing: 9) {
             Text("Daily usage")
                 .font(.system(size: 13, weight: .semibold))
+            Group {
+                if let day = days.first(where: { $0.id == hoveredDayID }) {
+                    HStack(spacing: 10) {
+                        Text(day.date)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 4)
+                        exactUsageLabel("Input", value: day.inputTokens, color: .blue)
+                        exactUsageLabel("Output", value: day.outputTokens, color: .purple)
+                    }
+                } else {
+                    Text("Hover a day to see exact input and output usage")
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .font(.system(size: 9, design: .rounded))
+            .frame(height: 12)
             HStack(alignment: .bottom, spacing: 7) {
                 ForEach(days) { day in
                     VStack(spacing: 4) {
@@ -105,6 +122,14 @@ private struct DailyUsageView: View {
                             .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        if hovering {
+                            hoveredDayID = day.id
+                        } else if hoveredDayID == day.id {
+                            hoveredDayID = nil
+                        }
+                    }
                 }
             }
             HStack(spacing: 12) {
@@ -121,6 +146,14 @@ private struct DailyUsageView: View {
         RoundedRectangle(cornerRadius: 2)
             .fill(color.opacity(0.85))
             .frame(height: max(3, 70 * CGFloat(value) / CGFloat(maximum)))
+    }
+
+    private func exactUsageLabel(_ label: String, value: Int, color: Color) -> some View {
+        HStack(spacing: 3) {
+            Circle().fill(color).frame(width: 5, height: 5)
+            Text("\(label) \(value.formatted())")
+                .foregroundStyle(.primary)
+        }
     }
 
     private func shortDate(_ value: String) -> String {

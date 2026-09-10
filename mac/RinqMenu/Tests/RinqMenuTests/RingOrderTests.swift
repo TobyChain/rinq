@@ -144,6 +144,24 @@ final class QuotaAlertTests: XCTestCase {
         XCTAssertFalse(monitor.evaluate(rings: [ring]).shouldPresent)
     }
 
+    func testDismissedAlertStaysHiddenUntilConditionClears() {
+        let defaults = isolatedDefaults()
+        var monitor = QuotaAlertMonitor(defaults: defaults)
+        let exhausted = ring("codex-5h", used: 100, window: 300)
+        let first = monitor.evaluate(rings: [exhausted])
+
+        monitor.dismiss(alertIDs: Set(first.active.map(\.id)))
+        monitor = QuotaAlertMonitor(defaults: defaults)
+        let dismissed = monitor.evaluate(rings: [exhausted])
+        XCTAssertTrue(dismissed.active.isEmpty)
+        XCTAssertFalse(dismissed.shouldPresent)
+
+        _ = monitor.evaluate(rings: [ring("codex-5h", used: 40, window: 300)])
+        let exhaustedAgain = monitor.evaluate(rings: [exhausted])
+        XCTAssertEqual(exhaustedAgain.active.first?.reason, .exhausted)
+        XCTAssertTrue(exhaustedAgain.shouldPresent)
+    }
+
     private func isolatedDefaults() -> UserDefaults {
         let suite = "rinq-alert-tests-\(UUID().uuidString)"
         return UserDefaults(suiteName: suite)!
