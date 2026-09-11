@@ -19,6 +19,7 @@ struct Ring: Codable, Identifiable, Hashable {
     let totalValue: Double?
     let valueUnit: String?
     let status: String?
+    let statusDetail: String?
 }
 
 enum RingOrder {
@@ -47,9 +48,43 @@ struct VendorInfo: Codable, Identifiable, Hashable {
     let hasKeySet: Bool
 }
 
+struct IntegrationInfo: Codable, Identifiable, Hashable {
+    let id: String
+    let label: String
+    let vendor: String
+    let installed: Bool
+    let configured: Bool
+    let running: Bool
+    let version: String?
+    let bundleId: String?
+    let appPath: String?
+    let usageAvailable: Bool
+    let usageAdapter: String?
+    let authMethod: String
+    let authState: String
+    let planState: String
+    let planReasons: [String]
+    let quotaState: String
+    let usageSupport: String?
+    let quotaSupport: String?
+    let connectURL: String
+}
+
 struct SettingsInfo: Codable {
     let ringOrder: [String]
     let vendors: [VendorInfo]
+    let integrations: [IntegrationInfo]
+
+    enum CodingKeys: String, CodingKey {
+        case ringOrder, vendors, integrations
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ringOrder = try container.decode([String].self, forKey: .ringOrder)
+        vendors = try container.decode([VendorInfo].self, forKey: .vendors)
+        integrations = try container.decodeIfPresent([IntegrationInfo].self, forKey: .integrations) ?? []
+    }
 }
 
 struct UsageDay: Codable, Identifiable, Hashable {
@@ -133,7 +168,8 @@ struct PopoverLayout: Equatable {
     static func make(
         ringCount: Int,
         visibleScreenSize: CGSize,
-        hasAlerts: Bool = false
+        hasAlerts: Bool = false,
+        showsRingVisualization: Bool = true
     ) -> PopoverLayout {
         let count = max(ringCount, 0)
         let columns = count >= 6 ? 2 : 1
@@ -147,7 +183,7 @@ struct PopoverLayout: Equatable {
         let rowHeight: CGFloat = 44
         let preferredRing: CGFloat = count <= 3 ? 150 : (count <= 5 ? 110 : 118)
         let availableRing = maxHeight - fixedHeight - CGFloat(rowCount) * rowHeight
-        let ringDiameter = min(preferredRing, max(64, availableRing))
+        let ringDiameter = showsRingVisualization ? min(preferredRing, max(64, availableRing)) : 0
         let desiredHeight = fixedHeight + ringDiameter + CGFloat(rowCount) * rowHeight
 
         return PopoverLayout(
@@ -157,6 +193,12 @@ struct PopoverLayout: Equatable {
             ringDiameter: ringDiameter,
             scrolls: desiredHeight > maxHeight
         )
+    }
+}
+
+enum RingPresentation {
+    static func quotaRings(_ rings: [Ring]) -> [Ring] {
+        rings.filter(\.hasQuotaValue)
     }
 }
 
@@ -197,6 +239,7 @@ enum Palette {
         case "red": return .red
         case "purple": return .purple
         case "teal": return .teal
+        case "gray": return .secondary
         default: return .blue
         }
     }
@@ -204,10 +247,13 @@ enum Palette {
 
 extension Ring {
     var fillPercent: Int { usedPercent ?? 0 }
+    var hasQuotaValue: Bool { usedPercent != nil }
 
     var usageText: String {
+        if status == "not_connected" { return "Not connected" }
+        if status == "quota_unavailable" { return "Unavailable" }
         guard let usedValue, let totalValue else {
-            return "\(fillPercent)% / 100%"
+            return "Quota unavailable"
         }
         return "\(formatValue(usedValue)) / \(formatValue(totalValue))"
     }

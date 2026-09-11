@@ -151,7 +151,7 @@ private struct DailyUsageView: View {
     private func exactUsageLabel(_ label: String, value: Int, color: Color) -> some View {
         HStack(spacing: 3) {
             Circle().fill(color).frame(width: 5, height: 5)
-            Text("\(label) \(value.formatted())")
+            Text("\(label) \(formatHoverTokenCount(value))")
                 .foregroundStyle(.primary)
         }
     }
@@ -238,6 +238,7 @@ private struct UsageSourcesView: View {
         case "cc_switch": return "cc-switch"
         case "traex": return "TraeX"
         case "codex": return "Codex"
+        case "zcode": return "ZCode"
         default: return source.adapter
         }
     }
@@ -251,7 +252,7 @@ private struct UsageEmptyView: View {
                 .foregroundStyle(.secondary)
             Text("No local usage yet")
                 .font(.system(size: 14, weight: .semibold))
-            Text("Rinq reads token counters from local Codex, TraeX, and Claude Code logs. Web sessions are not included.")
+            Text("Rinq reads token counters from local Codex, TraeX, Claude Code, and ZCode logs. Web sessions are not included.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -267,4 +268,11 @@ private func formatTokenCount(_ value: Int) -> String {
     if number >= 1_000_000 { return String(format: "%.1fM", number / 1_000_000) }
     if number >= 1_000 { return String(format: "%.1fK", number / 1_000) }
     return "\(value)"
+}
+
+func formatHoverTokenCount(_ value: Int) -> String {
+    let number = Double(max(value, 0))
+    if number >= 1_000_000_000 { return String(format: "%.1fB", number / 1_000_000_000) }
+    if number >= 100_000 { return String(format: "%.1fM", number / 1_000_000) }
+    return String(format: "%.1fK", number / 1_000)
 }

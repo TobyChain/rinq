@@ -41,7 +41,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ?? NSSize(width: 1440, height: 900)
         let initialLayout = PopoverLayout.make(
             ringCount: store.status?.rings.count ?? 0,
-            visibleScreenSize: screenSize
+            visibleScreenSize: screenSize,
+            showsRingVisualization: !(store.status?.rings.filter(\.hasQuotaValue).isEmpty ?? true)
         )
         let root = NSHostingController(rootView: RootView(
             store: store,
@@ -106,8 +107,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func render(rings: [Ring], alerts: [QuotaAlert]) {
         // The menu-bar icon shows one horizontal progress bar per quota. The
         // popover keeps its full Activity-style ring visualization.
-        let pcts = rings.map { pct($0) }
-        let alertLevels = rings.map { ring in
+        let visibleRings = RingPresentation.quotaRings(rings)
+        let pcts = visibleRings.map { pct($0) }
+        let alertLevels = visibleRings.map { ring in
             alerts.first(where: { $0.ringID == ring.id })?.level
         }
         item.button?.image = Self.progressBarImage(pcts: pcts, alertLevels: alertLevels)

@@ -33,6 +33,22 @@ def vendor_key(cfg: dict, vendor: str, env_var: str) -> str:
     return ""
 
 
+def has_vendor_credential(cfg: dict, vendor: str) -> bool:
+    if vendor == "codex":
+        token, _ = codex_chatgpt_token()
+        return bool(token)
+    env_var = {
+        "deepseek": "DEEPSEEK_API_KEY",
+        "moonshot": "MOONSHOT_API_KEY",
+        "zhipu": "ZHIPU_API_KEY",
+        "minimax": "MINIMAX_API_KEY",
+        "openai": "OPENAI_ADMIN_KEY",
+        "anthropic": "ANTHROPIC_ADMIN_KEY",
+        "xiaomi": "XIAOMI_API_KEY",
+    }.get(vendor, "")
+    return bool(vendor_key(cfg, vendor, env_var))
+
+
 def ccswitch_provider_key(*, app_type: str, name: str) -> str | None:
     db = _cc_db_path()
     if not db.exists():

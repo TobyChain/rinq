@@ -83,6 +83,36 @@ All user-facing quota values use `usedValue / totalValue`. `valueUnit` is
   values fall back to `blue` on the watch.
 - Events (`POST /event`) use states: `started completed failed waiting`.
 
+## Local IDE integrations
+
+`GET /config` includes an `integrations` array. It reports local installation,
+configuration presence, running state, non-secret account status, subscription
+entitlement state, and whether structured local usage logs were found.
+
+`planState=available` means that the client reports an active subscription or
+entitlement. `quotaState=available` is stricter: Rinq must have parsed a
+verified `usedValue`/`totalValue` or remaining balance before creating a ring.
+Rinq never treats a plan grant limit as current consumption.
+
+Current integration capability levels:
+
+| Integration | Installation / usage | Account state | Verified subscription ring |
+|---|---|---|---|
+| ZCode | local app + `~/.zcode/cli/log` | ZCode OAuth/provider metadata | plan detected; live balance requires a compatible client response |
+| MiMo Code/Desktop | app discovery when installed | official MiMo authorization page | no verified personal balance adapter yet |
+| Trae CN | app discovery; TraeX usage is separate | official account page | no verified personal quota endpoint |
+| Codex / ChatGPT | existing Codex session logs | local Codex login | supported by existing Codex collector |
+| Claude Code | `~/.claude/projects` | local/API configuration | organization API only; consumer plan not exposed |
+
+GitHub Copilot, Cursor, Windsurf, Gemini Code Assist, Zed, Cline, Roo Code,
+and Kilo Code may expose plan documentation or local usage, but Rinq must not
+infer live remaining quota from plan pricing, UI text, browser cookies, or an
+undocumented endpoint.
+
+`POST /auth/connect` accepts `{"integrationId": "zcode"}` from localhost and
+opens the vendor's official connection page. It does not accept passwords or
+tokens. Rinq does not read browser cookies or encrypted credential values.
+
 ## Vendors and credentials
 
 | collector | env var | endpoint (base) | kind | verified |
@@ -110,9 +140,11 @@ breakdown, and discovered sources. The counters are inputTokens,
 outputTokens, cachedInputTokens, cacheWriteInputTokens, reasoningOutputTokens,
 totalTokens, and requests.
 
-The default sources are ~/.codex/sessions, ~/.trae/cli/sessions, and
-~/.claude/projects. Set CODEX_HOME, TRAE_HOME/TRAECLI_HOME, or
-CLAUDE_CONFIG_DIR when a client stores logs elsewhere. Rinq uses an
-incremental index under ~/.rinq/usage.sqlite3 and scans 7 days by default.
+The default sources are ~/.codex/sessions, ~/.trae/cli/sessions,
+~/.claude/projects, and ~/.zcode/cli/log. Set CODEX_HOME, TRAE_HOME/TRAECLI_HOME,
+CLAUDE_CONFIG_DIR, or ZCODE_HOME when a client stores logs elsewhere. Rinq
+reads only structured token counters from ZCode logs and uses an incremental
+index under ~/.rinq/usage.sqlite3; it does not retain prompts, responses, tool
+arguments, or credential values.
 Optional usage.extraSources entries can add another supported local log root
 with an adapter and path.

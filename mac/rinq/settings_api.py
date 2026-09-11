@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import config as cfg_mod
+from . import integrations
 from . import sources
 
 VENDOR_META = {
@@ -24,19 +25,7 @@ VENDOR_META = {
 
 
 def _has_credential(cfg: dict, vendor: str) -> bool:
-    if vendor == "codex":
-        token, _ = sources.codex_chatgpt_token()
-        return bool(token)
-    env = {
-        "deepseek": "DEEPSEEK_API_KEY",
-        "moonshot": "MOONSHOT_API_KEY",
-        "zhipu": "ZHIPU_API_KEY",
-        "minimax": "MINIMAX_API_KEY",
-        "openai": "OPENAI_ADMIN_KEY",
-        "anthropic": "ANTHROPIC_ADMIN_KEY",
-        "xiaomi": "XIAOMI_API_KEY",
-    }.get(vendor)
-    return bool(sources.vendor_key(cfg, vendor, env or ""))
+    return sources.has_vendor_credential(cfg, vendor)
 
 
 def public_settings(cfg: dict) -> dict[str, Any]:
@@ -60,6 +49,7 @@ def public_settings(cfg: dict) -> dict[str, Any]:
         "host": cfg.get("host", "127.0.0.1"),
         "port": cfg.get("port", cfg_mod.DEFAULT_PORT),
         "vendors": vendors,
+        "integrations": integrations.discover_integrations(),
     }
 
 
@@ -88,9 +78,15 @@ def apply_public_settings(cfg: dict, patch: dict) -> dict:
     return cfg
 
 
+def connect_integration(integration_id: str) -> bool:
+    """Start an official browser-based connection without handling secrets."""
+    return integrations.open_connect_url(integration_id)
+
+
 def _all_ring_ids() -> list[str]:
-    return [
+    value_ids = [
         "codex-5h", "codex-week", "minimax-5h", "minimax-week",
         "deepseek-balance", "openai-api", "anthropic-api",
         "moonshot-balance", "zhipu-balance", "xiaomi-balance",
     ]
+    return value_ids + [f"{vendor}-status" for vendor in cfg_mod.VENDOR_IDS]

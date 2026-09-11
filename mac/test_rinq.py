@@ -14,8 +14,9 @@ os.environ["RINQ_HOME"] = tempfile.mkdtemp(prefix="rinq-test-")
 # Isolate collector tests from the user's real credentials/network.
 os.environ["RINQ_CCSWITCH_DB"] = os.path.join(os.environ["RINQ_HOME"], "no-ccswitch.db")
 os.environ["RINQ_CODEX_AUTH"] = os.path.join(os.environ["RINQ_HOME"], "no-auth.json")
+os.environ["ZCODE_HOME"] = os.path.join(os.environ["RINQ_HOME"], "no-zcode")
 
-from rinq import collectors, events, focus, sources, state as state_mod  # noqa: E402
+from rinq import collectors, events, focus, integrations, sources, state as state_mod  # noqa: E402
 from rinq import usage
 from rinq.server import Handler, ThreadingHTTPServer  # noqa: E402
 
@@ -78,6 +79,32 @@ class CollectorTests(unittest.TestCase):
         cfg = {"collectors": ["mock"], "enabled": {"deepseek": False}}
         ids = [r["id"] for r in collectors.collect(cfg)]
         self.assertNotIn("deepseek-balance", ids)
+
+    def test_enabled_provider_without_credential_has_status_item(self) -> None:
+        cfg = {"collectors": ["anthropic"], "enabled": {"anthropic": True}, "ringOrder": []}
+        rings = collectors.collect(cfg)
+        self.assertEqual([ring["id"] for ring in rings], ["anthropic-status"])
+        self.assertEqual(rings[0]["status"], "not_connected")
+        self.assertIsNone(rings[0]["usedPercent"])
+
+    def test_enabled_provider_with_failed_quota_has_unavailable_status(self) -> None:
+        cfg = {
+            "collectors": ["zhipu"], "enabled": {"zhipu": True},
+            "keys": {"zhipu": "test-key"}, "ringOrder": [],
+        }
+        original = collectors._get_json
+        collectors._get_json = lambda *_args, **_kwargs: None
+        try:
+            rings = collectors.collect(cfg)
+        finally:
+            collectors._get_json = original
+        self.assertEqual([ring["id"] for ring in rings], ["zhipu-status"])
+        self.assertEqual(rings[0]["status"], "quota_unavailable")
+
+    def test_explicit_enable_adds_provider_missing_from_legacy_collector_list(self) -> None:
+        cfg = {"collectors": ["codex"], "enabled": {"anthropic": True}, "ringOrder": []}
+        rings = collectors.collect(cfg)
+        self.assertIn("anthropic-status", [ring["id"] for ring in rings])
 
     def test_ring_order_applied(self) -> None:
         cfg = {"collectors": ["mock"], "ringOrder": ["openai-api", "codex-5h"]}
@@ -168,12 +195,52 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(rings["codex-week"]["usedPercent"], 0)
         self.assertEqual(rings["codex-week"]["windowMins"], 10080)
 
+class IntegrationTests(unittest.TestCase):
+    def test_undetected_integrations_are_hidden(self) -> None:
+        home = Path(tempfile.mkdtemp(prefix="rinq-no-integrations-"))
+        app_root = Path(tempfile.mkdtemp(prefix="rinq-no-apps-"))
+        self.assertEqual(
+            integrations.discover_integrations(home=home, app_dirs=(app_root,), process_text=""),
+            [],
+        )
+
+    def test_zcode_metadata_is_discovered_without_reading_credentials(self) -> None:
+        home = Path(tempfile.mkdtemp(prefix="rinq-zcode-"))
+        root = home / ".zcode" / "v2"
+        root.mkdir(parents=True)
+        (root / "setting.json").write_text(json.dumps({
+            "modelProviderFamilyModes": {"zai": "oauth"},
+            "modelProviderFamilySelectedKeys": {"zai": "coding-plan:builtin:zai-start-plan"},
+        }))
+        (root / "coding-plan-cache.json").write_text(json.dumps({
+            "entryStatus": {"items": {"plan": {"status": "available"}}}
+        }))
+        (root / "credentials.json").write_text("encrypted-secret-must-not-be-read")
+        app_root = Path(tempfile.mkdtemp(prefix="rinq-apps-"))
+        app = app_root / "ZCode.app" / "Contents"
+        app.mkdir(parents=True)
+        (app / "Info.plist").write_bytes(__import__("plistlib").dumps({
+            "CFBundleIdentifier": "dev.zcode.app",
+            "CFBundleShortVersionString": "test",
+        }))
+        result = integrations.discover_integrations(
+            home=home, app_dirs=(app_root,), process_text="ZCode Helper"
+        )
+        zcode = next(item for item in result if item["id"] == "zcode")
+        self.assertTrue(zcode["installed"])
+        self.assertTrue(zcode["configured"])
+        self.assertTrue(zcode["running"])
+        self.assertEqual(zcode["authState"], "connected")
+        self.assertEqual(zcode["authMethod"], "oauth")
+        self.assertEqual(zcode["planState"], "available")
+        self.assertNotIn("credentials", json.dumps(zcode))
+
 
 class ConfigEndpointTests(unittest.TestCase):
     def test_usage_endpoint_returns_contract(self) -> None:
         previous = {
             name: os.environ.get(name)
-            for name in ("CODEX_HOME", "TRAE_HOME", "TRAECLI_HOME", "CLAUDE_CONFIG_DIR")
+            for name in ("CODEX_HOME", "TRAE_HOME", "TRAECLI_HOME", "CLAUDE_CONFIG_DIR", "ZCODE_HOME")
         }
         previous_db_path = usage.USAGE_DB_PATH
         isolated_root = tempfile.mkdtemp(prefix="rinq-usage-http-")
@@ -258,6 +325,26 @@ class UsageTests(unittest.TestCase):
         self.assertIsNotNone(event)
         self.assertEqual(event[5:10], (90, 15, 30, 4, 0))
 
+    def test_zcode_usage_shape(self) -> None:
+        line = json.dumps({
+            "event": "model.sdk.stream.completed",
+            "timestamp": "2026-09-09T01:00:00Z",
+            "context": {
+                "providerId": "builtin:zai-start-plan",
+                "modelId": "GLM-5.3",
+                "usage": {
+                    "inputTokens": "120", "outputTokens": "30",
+                    "cacheReadTokens": "80", "cacheWriteTokens": "4",
+                    "reasoningTokens": "5",
+                },
+            },
+        }).encode()
+        event = usage._token_event(
+            "zcode", line, "ZCode", "zai", None, __import__("datetime").timezone.utc
+        )
+        self.assertIsNotNone(event)
+        self.assertEqual(event[5:10], (120, 30, 80, 4, 5))
+
     def test_native_jsonl_usage_is_incremental_and_excludes_content(self) -> None:
         root = tempfile.mkdtemp(prefix="rinq-usage-source-")
         sessions = os.path.join(root, "sessions", "2026", "09", "09")
@@ -294,6 +381,7 @@ class UsageTests(unittest.TestCase):
         os.environ["CODEX_HOME"] = root
         os.environ["TRAECLI_HOME"] = os.path.join(root, "missing-trae")
         os.environ["CLAUDE_CONFIG_DIR"] = os.path.join(root, "missing-claude")
+        os.environ["ZCODE_HOME"] = os.path.join(root, "missing-zcode")
         try:
             from datetime import datetime, timezone
             now = datetime(2026, 9, 9, 12, tzinfo=timezone.utc)

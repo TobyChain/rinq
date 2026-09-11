@@ -29,10 +29,12 @@ struct RootView: View {
     @State private var tab: RinqTab = .rings
 
     private var layout: PopoverLayout {
-        PopoverLayout.make(
-            ringCount: store.status?.rings.count ?? 0,
+        let rings = store.status?.rings ?? []
+        return PopoverLayout.make(
+            ringCount: rings.count,
             visibleScreenSize: visibleScreenSize,
-            hasAlerts: !store.alerts.isEmpty
+            hasAlerts: !store.alerts.isEmpty,
+            showsRingVisualization: !RingPresentation.quotaRings(rings).isEmpty
         )
     }
 

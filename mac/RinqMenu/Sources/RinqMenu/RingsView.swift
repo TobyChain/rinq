@@ -6,13 +6,14 @@ struct RingsView: View {
     var diameter: CGFloat = 190
 
     var body: some View {
+        let visibleRings = rings.filter(\.hasQuotaValue)
         // Adapt the ring thickness/gap to how many there are so any number
         // fits inside the outer diameter.
-        let n = max(rings.count, 1)
+        let n = max(visibleRings.count, 1)
         let lineWidth = min(13, (diameter - 30) / (CGFloat(n) * 2.3))
         let step = lineWidth + 6
         ZStack {
-            ForEach(Array(rings.enumerated()), id: \.element.id) { idx, ring in
+            ForEach(Array(visibleRings.enumerated()), id: \.element.id) { idx, ring in
                 let d = diameter - CGFloat(idx) * 2 * step
                 RingArc(ring: ring, alert: alert(for: ring), lineWidth: lineWidth)
                     .frame(width: max(d, lineWidth * 2), height: max(d, lineWidth * 2))
@@ -46,12 +47,12 @@ struct RingArc: View {
                 .rotationEffect(.degrees(-90))
                 .opacity(pulse ? 0.55 : 1)
         }
-        .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
-        .onAppear { pulse = alert != nil }
-        .onChange(of: alert) { _ in pulse = alert != nil }
+        .onAppear { updatePulse(active: alert != nil) }
+        .onChange(of: alert != nil) { active in updatePulse(active: active) }
     }
 
     private var alertColor: Color {
+        if !ring.hasQuotaValue { return .secondary }
         switch alert?.level {
         case .critical: return .red
         case .warning: return .orange
@@ -61,6 +62,17 @@ struct RingArc: View {
 
     private var alertTrackColor: Color {
         alert == nil ? Palette.color(ring.accent) : alertColor
+    }
+
+    private func updatePulse(active: Bool) {
+        if active {
+            pulse = false
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        } else {
+            withAnimation(nil) { pulse = false }
+        }
     }
 }
 
@@ -105,14 +117,14 @@ struct BarRow: View {
         .frame(minHeight: 38)
         .padding(.vertical, alert == nil ? 0 : 4)
         .background(alertColor.opacity(pulse ? 0.14 : 0.05), in: RoundedRectangle(cornerRadius: 8))
-        .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
-        .onAppear { pulse = alert != nil }
-        .onChange(of: alert) { _ in pulse = alert != nil }
+        .onAppear { updatePulse(active: alert != nil) }
+        .onChange(of: alert != nil) { active in updatePulse(active: active) }
     }
 
     private var alert: QuotaAlert? { alerts.first { $0.ringID == ring.id } }
 
     private var alertColor: Color {
+        if !ring.hasQuotaValue { return .secondary }
         switch alert?.level {
         case .critical: return .red
         case .warning: return .orange
@@ -121,6 +133,7 @@ struct BarRow: View {
     }
 
     private var detail: String {
+        if let statusDetail = ring.statusDetail { return statusDetail }
         if let reset = ring.resetsAt {
             let s = Double(reset) - Date().timeIntervalSince1970
             if s <= 0 { return "quota window ended" }
@@ -130,6 +143,17 @@ struct BarRow: View {
             return "resets in \(m)m"
         }
         return "\(pct)%"
+    }
+
+    private func updatePulse(active: Bool) {
+        if active {
+            pulse = false
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        } else {
+            withAnimation(nil) { pulse = false }
+        }
     }
 }
 

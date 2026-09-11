@@ -37,17 +37,19 @@ def discover_sources(extra_sources: list[dict[str, str]] | None = None) -> list[
     trae_home = _env_path("TRAE_HOME", home / ".trae")
     traecli_home = _env_path("TRAECLI_HOME", trae_home / "cli")
     claude_home = _env_path("CLAUDE_CONFIG_DIR", home / ".claude")
+    zcode_home = _env_path("ZCODE_HOME", home / ".zcode")
     candidates = [
         UsageSource("codex", codex_home / "sessions"),
         UsageSource("traex", traecli_home / "sessions"),
         UsageSource("claude_code", claude_home / "projects"),
+        UsageSource("zcode", zcode_home / "cli" / "log"),
     ]
     for extra in extra_sources or []:
         if not isinstance(extra, dict):
             continue
         adapter = extra.get("adapter", "")
         path = extra.get("path", "")
-        if adapter in {"codex", "traex", "claude_code"} and path:
+        if adapter in {"codex", "traex", "claude_code", "zcode"} and path:
             candidates.append(UsageSource(adapter, Path(path).expanduser()))
     seen = set()
     result = []
@@ -201,11 +203,17 @@ def _token_event(
     adapter: str, line: bytes, app: str, provider: str | None,
     current_model: str | None, local_tz: Any
 ) -> tuple[Any, ...] | None:
-    """Parse one top-level token event from Codex/TraeX/Claude Code."""
+    """Parse one top-level token event from supported local coding agents."""
     obj = None
     usage = None
     model = current_model
-    if b"token_count" in line:
+    if adapter == "zcode" and b"model.sdk." in line and b"completed" in line:
+        obj = _json(line)
+        context = obj.get("context", {}) if obj else {}
+        usage = context.get("usage") if isinstance(context, dict) else None
+        model = context.get("modelId") or context.get("model") or model
+        provider = context.get("providerId") or provider
+    elif b"token_count" in line:
         obj = _json(line)
         payload = obj.get("payload", {}) if obj else {}
         if obj and obj.get("type") == "event_msg" and payload.get("type") == "token_count":
@@ -228,12 +236,29 @@ def _token_event(
     local_date = datetime.fromtimestamp(occurred_at, local_tz).date().isoformat()
     return (
         occurred_at, local_date, app, provider, model,
-        int(usage.get("input_tokens", 0) or 0),
-        int(usage.get("output_tokens", 0) or 0),
-        int(usage.get("cached_input_tokens", usage.get("cache_read_input_tokens", 0)) or 0),
-        int(usage.get("cache_write_input_tokens", usage.get("cache_creation_input_tokens", 0)) or 0),
-        int(usage.get("reasoning_output_tokens", 0) or 0),
+        _usage_number(usage, "input_tokens", "inputTokens"),
+        _usage_number(usage, "output_tokens", "outputTokens"),
+        _usage_number(
+            usage, "cached_input_tokens", "cache_read_input_tokens", "cachedInputTokens", "cacheReadTokens"
+        ),
+        _usage_number(
+            usage, "cache_write_input_tokens", "cache_creation_input_tokens",
+            "cacheWriteInputTokens", "cacheCreationInputTokens", "cacheWriteTokens"
+        ),
+        _usage_number(usage, "reasoning_output_tokens", "reasoningTokens"),
     )
+
+
+def _usage_number(usage: dict[str, Any], *names: str) -> int:
+    for name in names:
+        value = usage.get(name)
+        if value is None:
+            continue
+        try:
+            return max(0, int(float(value)))
+        except (TypeError, ValueError):
+            continue
+    return 0
 
 
 def _json(line: bytes) -> dict[str, Any] | None:
@@ -259,7 +284,7 @@ def _timestamp(value: Any) -> int | None:
 
 def _default_app(adapter: str) -> str:
     """Return the default product label for a log adapter."""
-    return {"codex": "Codex CLI", "traex": "TraeX", "claude_code": "Claude Code"}[adapter]
+    return {"codex": "Codex CLI", "traex": "TraeX", "claude_code": "Claude Code", "zcode": "ZCode"}[adapter]
 
 
 def _session_identity(adapter: str, payload: dict[str, Any]) -> tuple[str, str | None]:
@@ -269,6 +294,8 @@ def _session_identity(adapter: str, payload: dict[str, Any]) -> tuple[str, str |
         return "TraeX", provider
     if adapter == "claude_code":
         return "Claude Code", provider or "anthropic"
+    if adapter == "zcode":
+        return "ZCode", provider or "zai"
     originator = str(payload.get("originator", "")).lower()
     source = payload.get("source")
     if "desktop" in originator:

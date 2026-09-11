@@ -15,13 +15,17 @@ struct DashboardView: View {
     }
 
     private var content: some View {
-        VStack(spacing: 8) {
-            RingsView(
-                rings: store.status?.rings ?? [],
-                alerts: store.alerts,
-                diameter: layout.ringDiameter
-            )
-                .padding(.top, 4)
+        let allRings = store.status?.rings ?? []
+        let quotaRings = RingPresentation.quotaRings(allRings)
+        return VStack(spacing: 8) {
+            if !quotaRings.isEmpty {
+                RingsView(
+                    rings: quotaRings,
+                    alerts: store.alerts,
+                    diameter: layout.ringDiameter
+                )
+                    .padding(.top, 4)
+            }
 
             LazyVGrid(
                 columns: Array(
@@ -30,7 +34,7 @@ struct DashboardView: View {
                 ),
                 spacing: 8
             ) {
-                ForEach(store.status?.rings ?? []) { ring in
+                ForEach(allRings) { ring in
                     BarRow(
                         ring: ring,
                         alerts: store.alerts,
@@ -40,7 +44,7 @@ struct DashboardView: View {
             }
             .padding(.horizontal, 14)
 
-            if (store.status?.rings ?? []).isEmpty {
+            if allRings.isEmpty {
                 Text("No active rings. Add a provider in the Providers tab.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -66,9 +70,31 @@ struct DashboardView: View {
 struct SettingsView: View {
     @ObservedObject var store: Store
 
+    private var detectedIntegrations: [IntegrationInfo] {
+        (store.settings?.integrations ?? []).filter {
+            $0.installed || $0.configured || $0.running || $0.usageAvailable
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                GroupBox("Local coding IDEs") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !detectedIntegrations.isEmpty {
+                            ForEach(detectedIntegrations) { integration in
+                                IntegrationRow(store: store, integration: integration)
+                                if integration.id != detectedIntegrations.last?.id { Divider() }
+                            }
+                        } else {
+                            Text("No supported coding IDE detected.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
                 GroupBox("Providers") {
                     VStack(spacing: 0) {
                 if let vendors = store.settings?.vendors {
@@ -100,6 +126,54 @@ struct SettingsView: View {
             .padding(12)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+private struct IntegrationRow: View {
+    @ObservedObject var store: Store
+    let integration: IntegrationInfo
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Circle()
+                    .fill(integration.installed ? (integration.running ? Color.green : Color.orange) : (integration.configured ? Color.blue : Color.secondary))
+                    .frame(width: 8, height: 8)
+                Text(integration.label)
+                    .font(.system(size: 12, weight: .medium))
+                if let version = integration.version {
+                    Text("v\(version)")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if integration.installed || integration.configured {
+                    Button(integration.authState == "connected" ? "Open account" : "Connect account") {
+                        Task { await store.connect(integration) }
+                    }
+                    .controlSize(.small)
+                }
+            }
+            HStack(spacing: 8) {
+                Text(integration.installed ? (integration.running ? "running" : "installed") : (integration.configured ? "configured" : "not installed"))
+                Text("login: \(integration.authState)")
+                Text("plan: \(integration.planState)")
+                if integration.usageAvailable { Text("usage tracked") }
+            }
+            .font(.system(size: 9))
+            .foregroundStyle(.secondary)
+            if integration.authState == "connected" && integration.quotaState != "available" {
+                Text("Account detected. This vendor does not expose a verified quota value to Rinq yet.")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+            }
+            if let quotaSupport = integration.quotaSupport, quotaSupport != "verified" {
+                Text("quota support: \(quotaSupport)")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

@@ -57,6 +57,19 @@ final class Store: ObservableObject {
         await patch(["keys": [id: ""]])
     }
 
+    func connect(_ integration: IntegrationInfo) async {
+        guard let url = URL(string: "\(base)/auth/connect"),
+              let data = try? JSONSerialization.data(withJSONObject: ["integrationId": integration.id]) else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = data
+        do {
+            _ = try await URLSession.shared.data(for: request)
+            _ = await refresh()
+        } catch {}
+    }
+
     func saveRingOrder(_ ids: [String]) async {
         await patch(["ringOrder": ids])
     }

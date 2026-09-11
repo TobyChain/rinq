@@ -1,74 +1,88 @@
 # Rinq
 
-🇬🇧 English · [🇨🇳 简体中文](README.zh-CN.md)
+🇬🇧 English · [🇨🇳 简体中文](README.zh-CN.md) · [License](#license)
 
-Rinq is a glanceable AI quota monitor for Apple devices. It turns provider
-limits, balances, and local coding-agent token usage into Activity-style rings
-and compact bars.
+## TL;DR
 
-Rinq has two independent paths:
+**See AI quota and local coding-agent usage before either becomes a problem.**
 
-- iPhone, iPad, and Apple Watch apps fetch configured provider quotas directly
-  over HTTPS.
-- The optional macOS menu-bar app reads local provider credentials and local
-  coding-agent logs through a loopback daemon.
+Rinq is a glanceable AI usage monitor for Apple devices. It turns provider limits, API balances, and local Codex, TraeX, and Claude Code token counters into Activity-style rings, compact bars, and daily usage summaries.
 
-## macOS quick start
+The macOS menu-bar app is the fastest way to start: one script installs a loopback daemon, CLI, and native popover. iPhone, iPad, Apple Watch, widgets, and complications are available from source and can fetch supported provider quotas without a Mac.
 
-The macOS path is the easiest way to try Rinq:
+## Introduction
 
-~~~bash
+AI usage is fragmented across subscription windows, API balances, and local agent logs. Each source uses different units and reset rules, so users often discover a limit only after work stops. Rinq normalizes these signals into one `used / total` view while keeping provider credentials and local token history on the device.
+
+Rinq has two independent data paths:
+
+- **Provider quota:** Apple clients or the macOS collector call configured provider endpoints over HTTPS.
+- **Local token usage:** the macOS daemon incrementally reads structured counters from native coding-agent logs.
+
+## What Rinq Adds
+
+| Area | What changes |
+|---|---|
+| **Quota rings** | Provider windows, spend, and balances use a common `used / total` presentation |
+| **Actionable alerts** | Exhausted, low, or rapidly consumed quota is highlighted; clicking the alert dismisses it until that condition clears |
+| **Local usage** | Daily and rolling-week input/output tokens are aggregated without storing prompts or responses |
+| **Daily inspection** | Hovering a day shows its input and output counts in one-decimal K/M/B units |
+| **Apple surfaces** | macOS menu bar, iPhone, iPad, Apple Watch, iOS widget, and watchOS complication share the same ring model |
+| **Provider controls** | Credentials, vendor visibility, reference totals, and ring order are managed locally |
+| **IDE integrations** | Detect installed/running coding IDEs, local account state, and structured local usage |
+
+## How It Works
+
+```text
+Provider HTTPS APIs ───────────────┐
+                                   ├─ normalized quota rings ─┐
+Local coding-agent JSONL logs ─┐   │                          │
+                               ├─ macOS loopback daemon ──────┼─ menu bar + local dashboard
+~/.rinq/usage.sqlite3 ─────────┘                              │
+                                                             └─ status / usage JSON
+
+iPhone · iPad · Apple Watch ─── direct provider HTTPS ─── shared ring views
+```
+
+Local token usage and provider quota remain separate. Rinq can show local agent usage even when a provider does not expose a public quota endpoint.
+
+## Getting Started
+
+### Requirements
+
+- macOS for the menu-bar app and local usage collector
+- Python 3 for the daemon and CLI
+- Swift toolchain/Xcode Command Line Tools for the native menu-bar app
+
+### Install on macOS
+
+```bash
 git clone https://github.com/TobyChain/rinq.git
 cd rinq
 ./install.sh
-~~~
+```
 
-install.sh installs the rinq CLI, starts the local daemon, builds the menu-bar
-app, and registers both as launchd agents. Click the Rinq icon in the menu bar
-to open the popover.
+The installer copies the runtime to `~/.rinq`, installs `~/.local/bin/rinq`, builds the native menu-bar app, and registers both the daemon and menu app with launchd. Click the Rinq menu-bar icon to open the popover.
 
-The menu-bar app includes:
+The popover contains:
 
-- Rings: configured provider quotas as adaptive colored rings and bars; click a quota alert banner to dismiss it until that quota condition clears;
-- Usage: daily and rolling-week input/output tokens from local coding agents; hover a daily bar group to see that day's exact input and output counts;
-- Providers: local credential setup, vendor toggles, and drag-to-reorder.
+- **Rings:** configured quotas, reset windows, and dismissible alerts.
+- **Usage:** today, rolling week, per-day input/output, and per-app totals.
+- **Providers:** local credentials, vendor toggles, and drag-to-reorder.
 
-The daemon listens on 127.0.0.1:7788 by default. Useful local endpoints are
-/status, /usage, and /config. The detailed JSON contracts are in
-[schema/status.md](schema/status.md).
+Update an existing installation:
 
-To update an existing installation:
-
-~~~bash
-git pull
+```bash
+git pull --ff-only
 ./install.sh
-~~~
+```
 
-## Local token usage
+The daemon listens on `127.0.0.1:7788` by default. Useful local endpoints are `/status`, `/usage`, and `/config`.
 
-The macOS Usage tab reads structured token counters from native local coding
-agents. It does not read browser sessions and does not store prompts,
-responses, tool arguments, or tool output.
-
-Default log locations:
-
-- Codex: ~/.codex/sessions
-- TraeX: ~/.trae/cli/sessions
-- Claude Code: ~/.claude/projects
-
-Rinq supports CODEX_HOME, TRAE_HOME, TRAECLI_HOME, and CLAUDE_CONFIG_DIR for
-non-standard locations. The incremental index is stored locally at
-~/.rinq/usage.sqlite3; seven days are scanned by default.
-
-Local usage is separate from provider subscription quota. A token counter can
-exist even when a provider does not expose a public quota endpoint.
-
-## Provider quotas
-
-The current collectors cover:
+## Provider Quotas
 
 | Provider | Displayed data | Credential source |
-| --- | --- | --- |
+|---|---|---|
 | ChatGPT / Codex | 5-hour and weekly windows | Local Codex login |
 | MiniMax | Coding Plan 5-hour and weekly windows | API key or cc-switch |
 | OpenAI API | Organization spend | Admin API key |
@@ -78,67 +92,85 @@ The current collectors cover:
 | Xiaomi MiMo | Balance when a supported endpoint is available | API key |
 | Claude API | Organization spend when configured | Admin API key |
 
-Providers without a usable credential are hidden. All values use the same
-direction: used / total. Balance rings use the configured balanceFull value as
-their reference total.
+Providers without a usable credential are hidden. Balance rings use the configured `balanceFull` value as their reference total. ChatGPT/Codex relies on an unofficial subscription endpoint and is intended for self-built or sideloaded apps, not App Store distribution.
 
-macOS provider settings are stored locally in ~/.rinq/config.json with
-restrictive file permissions. Rinq sends credentials only to the matching
-provider endpoint. Do not commit ~/.rinq/config.json or any API key.
+## Local Token Usage
 
-## iOS and watchOS
+The macOS Usage tab reads structured token counters from native local agents. It does not read browser sessions or retain prompts, responses, tool arguments, or tool output.
 
-The Apple apps are source-only and do not require a Mac at runtime. They share
-the provider models and ring views, and include an iOS widget plus a watchOS
-complication.
+Default locations:
 
-Generate the Xcode project and build for simulators:
+- Codex: `~/.codex/sessions`
+- TraeX: `~/.trae/cli/sessions`
+- Claude Code: `~/.claude/projects`
 
-~~~bash
-make ios-build
-make watch-build
-~~~
+Rinq honors `CODEX_HOME`, `TRAE_HOME`, `TRAECLI_HOME`, `CLAUDE_CONFIG_DIR`, and `ZCODE_HOME`. Use `usage.extraSources` when a supported agent stores JSONL logs elsewhere. The incremental index lives at `~/.rinq/usage.sqlite3`; the default lookback is seven days.
 
-For a physical device, open the generated app/Rinq.xcodeproj in Xcode and
-select your development team. A free Apple ID is suitable for local testing
-but requires periodic re-signing; a paid team is needed for longer-lived
-device installs and iCloud Keychain sharing.
+The macOS Providers tab also detects installed and running coding IDEs such as ZCode, MiMo Code/Desktop, and Trae CN. It reports the IDE's non-secret login/entitlement state and can open the vendor's official account connection page. Rinq never asks for a vendor password, reads browser cookies, or copies encrypted client credentials into `~/.rinq/config.json`.
 
-The ChatGPT/Codex collector uses an unofficial endpoint and is intended for
-self-built or sideloaded builds. Do not include it in an App Store build.
+Integration support is capability-aware. ZCode currently exposes local OAuth/plan metadata and structured token usage; its entitlement endpoint does not by itself provide a valid used/remaining ring. MiMo Code/Desktop and Trae CN are detected when installed, while their personal subscription balances remain `unknown` until a stable official usage interface is available. The same policy applies to Copilot, Cursor, Windsurf, Gemini Code Assist, Zed, Cline, Roo Code, and Kilo Code.
 
 ## Configuration
 
-The macOS daemon creates ~/.rinq/config.json on first run. A minimal example:
+The daemon creates `~/.rinq/config.json` on first run. A minimal configuration is:
 
-~~~json
+```json
 {
   "collectors": ["codex", "minimax", "deepseek", "openai"],
   "budgetUsd": { "openai": 20.0 },
   "balanceFull": { "deepseek": 100.0 },
   "usage": { "lookbackDays": 7 }
 }
-~~~
+```
 
-Set `collectors` to ["mock"] to show synthetic data without provider network
-requests. Use `usage.extraSources` only when a supported coding agent stores its
-JSONL logs outside the standard directories.
+Set `collectors` to `["mock"]` to render synthetic data without provider network requests.
+
+## iOS and watchOS
+
+The Apple apps are source-only and do not require a Mac at runtime. They share provider models and ring views and include an iOS widget plus a watchOS complication.
+
+```bash
+make ios-build
+make watch-build
+```
+
+For a physical device, open `app/Rinq.xcodeproj` in Xcode and select your development team. A free Apple ID works for local testing but requires periodic re-signing; longer-lived installs and iCloud Keychain sharing require a paid team.
+
+## Storage and Security
+
+- Provider settings are stored locally in `~/.rinq/config.json` with restricted permissions.
+- The usage index is local at `~/.rinq/usage.sqlite3` and stores counters and source metadata, not conversation content.
+- Credentials are sent only to their matching provider endpoint.
+- The daemon binds to the loopback interface by default; configuration writes are restricted to local clients.
+- Do not commit `~/.rinq/config.json`, API keys, session credentials, or exported local databases.
+
+## Documentation
+
+| Document | Purpose |
+|---|---|
+| [Status schema](schema/status.md) | Public quota, event, and local usage JSON contracts |
+| [Chinese README](README.zh-CN.md) | Simplified Chinese project guide |
+| [Hooks](hooks/) | Agent notification integration examples |
+| [Apple project](app/project.yml) | iOS/watchOS targets and build configuration |
 
 ## Development
 
-~~~bash
+Run the daemon tests and native menu-bar tests:
+
+```bash
 cd mac
 python3 -m unittest test_rinq
 
 cd RinqMenu
 swift test
 swift build -c release
-~~~
+```
 
-The repository also contains the iOS/watchOS source, provider adapters, local
-hooks, and the public status schema. Contributions should keep credentials
-local, preserve explicit offline/error states, and avoid adding provider-
-specific secrets to source control.
+The repository also contains provider adapters, local hooks, iOS/watchOS sources, widgets, and the public status contract. Changes should preserve local credential handling, explicit offline/error states, and the common `used / total` quota contract.
+
+## Project Status
+
+Rinq is a personal open-source project. Provider quota support depends on the interfaces each provider exposes; unofficial or organization-only endpoints may change independently of Rinq.
 
 ## License
 

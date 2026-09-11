@@ -424,22 +424,68 @@ _COLLECTORS = {
     "xiaomi": _xiaomi,
 }
 
+_STATUS_META = {
+    "codex": ("ChatGPT / Codex", "blue"),
+    "minimax": ("MiniMax Coding Plan", "orange"),
+    "deepseek": ("DeepSeek", "teal"),
+    "openai": ("OpenAI API", "green"),
+    "anthropic": ("Claude API", "orange"),
+    "moonshot": ("Kimi / Moonshot", "purple"),
+    "zhipu": ("GLM / Zhipu", "red"),
+    "xiaomi": ("Xiaomi MiMo", "orange"),
+}
+
+
+def _status_ring(vendor: str, status: str) -> dict[str, Any]:
+    label, _accent = _STATUS_META[vendor]
+    detail = {
+        "not_connected": "Connect an account or add a credential",
+        "quota_unavailable": "Connected, but live quota is unavailable",
+    }[status]
+    return {
+        "id": f"{vendor}-status",
+        "label": label,
+        "vendor": vendor,
+        "kind": "status",
+        "usedPercent": None,
+        "usedValue": None,
+        "totalValue": None,
+        "valueUnit": None,
+        "status": status,
+        "statusDetail": detail,
+        "accent": "gray",
+    }
+
 
 def collect(cfg: dict) -> list[dict[str, Any]]:
     rings: list[dict[str, Any]] = []
     enabled = cfg.get("enabled") or {}
-    for name in cfg.get("collectors", ["mock"]):
+    collector_names = list(cfg.get("collectors", ["mock"]))
+    for name, is_enabled in enabled.items():
+        if is_enabled is True and name in _COLLECTORS and name not in collector_names:
+            collector_names.append(name)
+    for name in collector_names:
         if enabled.get(name) is False:
             continue
         fn = _COLLECTORS.get(name)
         if fn:
-            rings.extend(fn(cfg))
+            collected = [
+                ring for ring in fn(cfg)
+                if not (
+                    ring.get("status") == "unknown"
+                    and ring.get("usedPercent") is None
+                    and ring.get("remaining") is None
+                )
+            ]
+            rings.extend(collected)
+            # Explicitly enabled providers stay visible even when no live quota
+            # is available. The status item is not a percentage and does not
+            # participate in quota alerts.
+            if enabled.get(name) is True and not collected and name in _STATUS_META:
+                status = "quota_unavailable" if sources.has_vendor_credential(cfg, name) else "not_connected"
+                rings.append(_status_ring(name, status))
     # Hide rings for vendors the user explicitly turned off.
     rings = [r for r in rings if enabled.get(r.get("vendor"), True) is not False]
-    # Drop placeholders that still report unknown; configured vendors with a
-    # failed fetch are kept (so the user sees a stale/error state), but
-    # vendors with no credential produce nothing.
-    rings = [r for r in rings if not (r.get("status") == "unknown" and r.get("usedPercent") is None and r.get("remaining") is None)]
     from . import config as _config
     rings.sort(key=_config.ring_sort_key(cfg))
     return rings

@@ -36,7 +36,26 @@ final class RingOrderTests: XCTestCase {
             id: id, label: id, vendor: nil, kind: "window", usedPercent: 0,
             remainingPercent: nil, remaining: nil, currency: nil, resetsAt: nil,
             windowMins: 300, accent: "blue", spentUsd: nil, budgetUsd: nil, usedValue: 0,
-            totalValue: 100, valueUnit: "percent", status: nil
+            totalValue: 100, valueUnit: "percent", status: nil, statusDetail: nil
+        )
+    }
+}
+
+final class RingPresentationTests: XCTestCase {
+    func testStatusItemsDoNotBecomeMenuBarQuotaBars() {
+        let quota = ring(id: "codex-5h", used: 25, status: nil)
+        let status = ring(id: "zhipu-status", used: nil, status: "not_connected")
+        XCTAssertEqual(RingPresentation.quotaRings([quota, status]).map(\.id), ["codex-5h"])
+    }
+
+    private func ring(id: String, used: Int?, status: String?) -> Ring {
+        Ring(
+            id: id, label: id, vendor: nil, kind: status == nil ? "window" : "status",
+            usedPercent: used, remainingPercent: nil, remaining: nil, currency: nil,
+            resetsAt: nil, windowMins: nil, accent: status == nil ? "blue" : "gray",
+            spentUsd: nil, budgetUsd: nil, usedValue: used.map(Double.init),
+            totalValue: used == nil ? nil : 100, valueUnit: used == nil ? nil : "percent",
+            status: status, statusDetail: status == nil ? nil : "Connect an account"
         )
     }
 }
@@ -172,7 +191,21 @@ final class QuotaAlertTests: XCTestCase {
             id: id, label: id, vendor: "codex", kind: "window", usedPercent: used,
             remainingPercent: 100 - used, remaining: nil, currency: nil, resetsAt: nil,
             windowMins: window, accent: "blue", spentUsd: nil, budgetUsd: nil,
-            usedValue: Double(used), totalValue: 100, valueUnit: "percent", status: nil
+            usedValue: Double(used), totalValue: 100, valueUnit: "percent", status: nil,
+            statusDetail: nil
         )
+    }
+}
+
+final class UsageFormattingTests: XCTestCase {
+    func testHoverTokenCountUsesThousandsBelowPointOneMillion() {
+        XCTAssertEqual(formatHoverTokenCount(99_999), "100.0K")
+        XCTAssertEqual(formatHoverTokenCount(12_345), "12.3K")
+    }
+
+    func testHoverTokenCountUsesMillionsAndBillionsWithOneDecimal() {
+        XCTAssertEqual(formatHoverTokenCount(100_000), "0.1M")
+        XCTAssertEqual(formatHoverTokenCount(1_250_000), "1.2M")
+        XCTAssertEqual(formatHoverTokenCount(1_250_000_000), "1.2B")
     }
 }

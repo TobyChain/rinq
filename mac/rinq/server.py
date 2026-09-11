@@ -10,7 +10,7 @@ from .dashboard import HTML
 from .events import apply_event
 from .focus import current_focus
 from .push import push_glance
-from .settings_api import apply_public_settings, public_settings
+from .settings_api import apply_public_settings, connect_integration, public_settings
 from .state import load_state, save_state
 from .usage import build_usage_summary
 
@@ -63,6 +63,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, public_settings(load_config()))
         elif path == "/usage":
             self._send_json(200, build_usage_summary())
+        elif path == "/integrations":
+            self._send_json(200, {"integrations": public_settings(load_config()).get("integrations", [])})
         else:
             self._send_json(404, {"error": "not found"})
 
@@ -107,6 +109,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": str(exc)})
                 return
             self._send_json(200, {"ok": True, "config": public_settings(load_config())})
+        elif path == "/auth/connect":
+            if self.client_address[0] not in ("127.0.0.1", "::1"):
+                self._send_json(403, {"error": "authentication actions are local-only"})
+                return
+            integration_id = payload.get("integrationId")
+            if not isinstance(integration_id, str) or not connect_integration(integration_id):
+                self._send_json(404, {"error": "unknown integration"})
+                return
+            self._send_json(200, {"ok": True})
         else:
             self._send_json(404, {"error": "not found"})
 
