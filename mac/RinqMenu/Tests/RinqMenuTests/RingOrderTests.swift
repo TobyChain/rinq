@@ -165,6 +165,27 @@ final class MenuBarLayoutTests: XCTestCase {
     }
 }
 
+final class MainMenuTests: XCTestCase {
+    // The accessory app needs a standard Edit menu so the API key field can
+    // accept Cmd-V paste (and Cut/Copy/Select All). Verify the menu exposes the
+    // clipboard actions with nil target and the expected key equivalents so
+    // AppKit routes them to the first-responder text field.
+    @MainActor
+    func testEditMenuProvidesClipboardActions() {
+        let editMenu = AppDelegate.makeMainMenu().items
+            .compactMap(\.submenu)
+            .first { $0.title == "Edit" }
+        let paste = editMenu?.items.first { $0.action == #selector(NSText.paste(_:)) }
+
+        XCTAssertNotNil(paste, "Edit menu must include a Paste item")
+        XCTAssertEqual(paste?.keyEquivalent, "v")
+        XCTAssertNil(paste?.target, "Paste must dispatch to the first responder")
+        XCTAssertTrue(editMenu?.items.contains { $0.action == #selector(NSText.copy(_:)) } ?? false)
+        XCTAssertTrue(editMenu?.items.contains { $0.action == #selector(NSText.cut(_:)) } ?? false)
+        XCTAssertTrue(editMenu?.items.contains { $0.action == #selector(NSText.selectAll(_:)) } ?? false)
+    }
+}
+
 final class PopoverBackgroundTests: XCTestCase {
     @MainActor
     func testBackgroundConfigurationDoesNotPaintContentSubviews() {

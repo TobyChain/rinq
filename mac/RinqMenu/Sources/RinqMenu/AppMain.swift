@@ -19,6 +19,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         item = NSStatusBar.system.statusItem(withLength: 30)
         item.button?.target = self
         item.button?.action = #selector(toggle(_:))
+        // An .accessory agent app has no application menu, so the standard
+        // clipboard key equivalents are never routed to the first responder and
+        // an API key cannot be pasted into the Settings field. Install a main
+        // menu with an Edit menu to restore Cut/Copy/Paste/Select All.
+        NSApp.mainMenu = Self.makeMainMenu()
         store = Store()
         render(rings: [], alerts: [])
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
@@ -65,6 +70,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         pop.contentViewController = root
         popover = pop
         pop.show(relativeTo: item.button!.bounds, of: item.button!, preferredEdge: .minY)
+        // Bring the agent app forward so the popover window becomes key and its
+        // text fields can become first responder; without this an accessory
+        // app's popover may not receive keyboard input such as paste.
+        NSApp.activate(ignoringOtherApps: true)
 
         // Replace the popover's vibrant backdrop with a solid window-background
         // layer so the SwiftUI content (including the segmented control) reads
@@ -140,6 +149,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         cancelIdleAutoClose()
+    }
+
+    // MARK: - Main menu
+
+    // Build a minimal main menu whose only purpose is a standard Edit menu.
+    // The clipboard items send nil-target selectors (cut:/copy:/paste:/
+    // selectAll:) so AppKit routes them to whatever control is first responder,
+    // which lets the API key SecureField accept Cmd-V paste and the shortcuts.
+    static func makeMainMenu() -> NSMenu {
+        let mainMenu = NSMenu()
+
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(
+            withTitle: "Quit Rinq", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"
+        )
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(
+            withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"
+        )
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
+        return mainMenu
     }
 
     private func presentAlertPopover() {
