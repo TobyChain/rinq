@@ -10,11 +10,15 @@ final class Store: ObservableObject {
     @Published var saving = false
 
     let port: Int
-    private var alertMonitor = QuotaAlertMonitor()
+    private var alertMonitor: QuotaAlertMonitor
     private var base: String { "http://127.0.0.1:\(port)" }
 
-    init(port: Int = Int(ProcessInfo.processInfo.environment["RINQ_PORT"] ?? "7788") ?? 7788) {
+    init(
+        port: Int = Int(ProcessInfo.processInfo.environment["RINQ_PORT"] ?? "7788") ?? 7788,
+        alertDefaults: UserDefaults = .standard
+    ) {
         self.port = port
+        alertMonitor = QuotaAlertMonitor(defaults: alertDefaults)
     }
 
     @discardableResult
@@ -74,9 +78,12 @@ final class Store: ObservableObject {
         await patch(["ringOrder": ids])
     }
 
-    func dismissAlerts() {
+    @discardableResult
+    func dismissAlerts() -> Bool {
+        guard !alerts.isEmpty else { return false }
         alertMonitor.dismiss(alertIDs: Set(alerts.map(\.id)))
         alerts = []
+        return true
     }
 
     @discardableResult

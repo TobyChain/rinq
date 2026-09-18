@@ -159,11 +159,29 @@ struct UsageWeek: Codable {
 }
 
 struct PopoverLayout: Equatable {
+    static let alertSlotHeight: CGFloat = 54
+    static let alertBannerHeight: CGFloat = 44
+    static let footerHeight: CGFloat = 34
+
     let width: CGFloat
     let height: CGFloat
     let columns: Int
     let ringDiameter: CGFloat
     let scrolls: Bool
+    let reservesAlertSpace: Bool
+
+    static func make(
+        rings: [Ring],
+        visibleScreenSize: CGSize,
+        hasAlerts: Bool = false
+    ) -> PopoverLayout {
+        make(
+            ringCount: rings.count,
+            visibleScreenSize: visibleScreenSize,
+            hasAlerts: hasAlerts,
+            showsRingVisualization: !RingPresentation.quotaRings(rings).isEmpty
+        )
+    }
 
     static func make(
         ringCount: Int,
@@ -179,7 +197,7 @@ struct PopoverLayout: Equatable {
         // half of the current screen's visible height.
         let maxHeight = max(1, floor(visibleScreenSize.height * 0.5) - 28)
         let rowCount = max(1, Int(ceil(Double(max(count, 1)) / Double(columns))))
-        let fixedHeight: CGFloat = 88 + (hasAlerts ? 54 : 0)
+        let fixedHeight: CGFloat = 88 + footerHeight + (hasAlerts ? alertSlotHeight : 0)
         let rowHeight: CGFloat = 44
         let preferredRing: CGFloat = count <= 3 ? 150 : (count <= 5 ? 110 : 118)
         let availableRing = maxHeight - fixedHeight - CGFloat(rowCount) * rowHeight
@@ -191,8 +209,21 @@ struct PopoverLayout: Equatable {
             height: min(desiredHeight, maxHeight),
             columns: columns,
             ringDiameter: ringDiameter,
-            scrolls: desiredHeight > maxHeight
+            scrolls: desiredHeight > maxHeight,
+            reservesAlertSpace: hasAlerts
         )
+    }
+}
+
+struct PopoverAlertLayoutState: Equatable {
+    private(set) var reservesAlertSpace: Bool
+
+    init(hasAlerts: Bool) {
+        reservesAlertSpace = hasAlerts
+    }
+
+    mutating func observe(hasAlerts: Bool) {
+        if hasAlerts { reservesAlertSpace = true }
     }
 }
 

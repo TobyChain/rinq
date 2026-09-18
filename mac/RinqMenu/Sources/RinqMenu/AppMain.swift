@@ -6,11 +6,14 @@ import SwiftUI
 // provider keys, toggling vendors, and managing ring order. Data comes from
 // the rinq daemon (http://127.0.0.1:<port>).
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var item: NSStatusItem!
     private var popover: NSPopover?
     private var store: Store!
     private var timer: Timer?
+    private var idleCloseWorkItem: DispatchWorkItem?
+    private var popoverEventMonitor: Any?
+    private static let idleCloseInterval: TimeInterval = 10
 
     func applicationDidFinishLaunching(_ note: Notification) {
         item = NSStatusBar.system.statusItem(withLength: 30)
@@ -40,9 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ?? NSScreen.main?.visibleFrame.size
             ?? NSSize(width: 1440, height: 900)
         let initialLayout = PopoverLayout.make(
-            ringCount: store.status?.rings.count ?? 0,
+            rings: store.status?.rings ?? [],
             visibleScreenSize: screenSize,
-            showsRingVisualization: !(store.status?.rings.filter(\.hasQuotaValue).isEmpty ?? true)
+            hasAlerts: !store.alerts.isEmpty
         )
         let root = NSHostingController(rootView: RootView(
             store: store,
@@ -57,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ))
         let pop = NSPopover()
         pop.behavior = .transient
+        pop.delegate = self
         pop.contentSize = NSSize(width: initialLayout.width, height: initialLayout.height)
         pop.contentViewController = root
         popover = pop
@@ -68,13 +72,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async {
             if let window = pop.contentViewController?.view.window,
                let content = window.contentView {
-                self.makeOpaque(content)
+                Self.configurePopoverBackground(content)
             }
         }
+        startIdleAutoClose()
         Task {
             _ = await store.refresh()
             render(rings: store.status?.rings ?? [], alerts: store.alerts)
         }
+    }
+
+    // MARK: - Idle auto-close
+
+    // The popover closes itself after `idleCloseInterval` seconds without user
+    // interaction. A local event monitor resets the deadline on any click,
+    // scroll, key press, drag, or pointer movement inside the popover window.
+    // An open alert popover is kept until the user interacts, so a quota alert
+    // is not hidden before it is seen.
+    private func startIdleAutoClose() {
+        installPopoverEventMonitor()
+        scheduleIdleClose()
+    }
+
+    private func scheduleIdleClose() {
+        idleCloseWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, let pop = self.popover, pop.isShown else { return }
+            // Keep an alerting popover open until the alert is acknowledged;
+            // re-arm the timer so it closes once the alert clears.
+            if !self.store.alerts.isEmpty {
+                self.scheduleIdleClose()
+                return
+            }
+            pop.performClose(nil)
+        }
+        idleCloseWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.idleCloseInterval, execute: work)
+    }
+
+    private func installPopoverEventMonitor() {
+        guard popoverEventMonitor == nil else { return }
+        let mask: NSEvent.EventTypeMask = [
+            .leftMouseDown, .rightMouseDown, .otherMouseDown,
+            .leftMouseDragged, .scrollWheel, .keyDown, .mouseMoved,
+        ]
+        popoverEventMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            if let self, self.isEventInPopover(event) {
+                self.scheduleIdleClose()
+            }
+            return event
+        }
+    }
+
+    private func isEventInPopover(_ event: NSEvent) -> Bool {
+        guard let popoverWindow = popover?.contentViewController?.view.window else { return false }
+        return event.window === popoverWindow
+    }
+
+    private func cancelIdleAutoClose() {
+        idleCloseWorkItem?.cancel()
+        idleCloseWorkItem = nil
+        if let monitor = popoverEventMonitor {
+            NSEvent.removeMonitor(monitor)
+            popoverEventMonitor = nil
+        }
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        cancelIdleAutoClose()
     }
 
     private func presentAlertPopover() {
@@ -88,20 +153,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if popover.contentSize != size { popover.contentSize = size }
     }
 
-    private func makeOpaque(_ view: NSView) {
-        for sub in view.subviews {
-            if let vfx = sub as? NSVisualEffectView {
-                vfx.material = .windowBackground
-                vfx.blendingMode = .withinWindow
-                vfx.state = .inactive
+    static func configurePopoverBackground(_ content: NSView) {
+        content.wantsLayer = true
+        content.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        configureVisualEffects(in: content)
+    }
+
+    private static func configureVisualEffects(in view: NSView) {
+        for subview in view.subviews {
+            if let effect = subview as? NSVisualEffectView {
+                effect.material = .windowBackground
+                effect.blendingMode = .withinWindow
+                effect.state = .inactive
             }
-            sub.wantsLayer = true
-            if sub.layer?.backgroundColor == nil {
-                sub.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-            }
-            makeOpaque(sub)
+            configureVisualEffects(in: subview)
         }
-        view.wantsLayer = true
     }
 
     private func render(rings: [Ring], alerts: [QuotaAlert]) {

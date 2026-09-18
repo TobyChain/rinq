@@ -38,18 +38,20 @@ def discover_sources(extra_sources: list[dict[str, str]] | None = None) -> list[
     traecli_home = _env_path("TRAECLI_HOME", trae_home / "cli")
     claude_home = _env_path("CLAUDE_CONFIG_DIR", home / ".claude")
     zcode_home = _env_path("ZCODE_HOME", home / ".zcode")
+    omp_agent_home = _env_path("PI_CODING_AGENT_DIR", home / ".omp" / "agent")
     candidates = [
         UsageSource("codex", codex_home / "sessions"),
         UsageSource("traex", traecli_home / "sessions"),
         UsageSource("claude_code", claude_home / "projects"),
         UsageSource("zcode", zcode_home / "cli" / "log"),
+        UsageSource("omp", omp_agent_home / "sessions"),
     ]
     for extra in extra_sources or []:
         if not isinstance(extra, dict):
             continue
         adapter = extra.get("adapter", "")
         path = extra.get("path", "")
-        if adapter in {"codex", "traex", "claude_code", "zcode"} and path:
+        if adapter in {"codex", "traex", "claude_code", "zcode", "omp"} and path:
             candidates.append(UsageSource(adapter, Path(path).expanduser()))
     seen = set()
     result = []
@@ -109,12 +111,16 @@ def _ensure_schema(db: sqlite3.Connection) -> None:
             local_date TEXT NOT NULL, app TEXT NOT NULL, provider TEXT, model TEXT,
             input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL,
             cached_input_tokens INTEGER NOT NULL, cache_write_input_tokens INTEGER NOT NULL,
-            reasoning_output_tokens INTEGER NOT NULL,
+            reasoning_output_tokens INTEGER NOT NULL, event_key TEXT,
             PRIMARY KEY (path, byte_offset)
         );
-        CREATE INDEX IF NOT EXISTS idx_usage_events_date ON usage_events(local_date);
         """
     )
+    columns = {row[1] for row in db.execute("PRAGMA table_info(usage_events)")}
+    if "event_key" not in columns:
+        db.execute("ALTER TABLE usage_events ADD COLUMN event_key TEXT")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_usage_events_date ON usage_events(local_date)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_usage_events_event_key ON usage_events(event_key)")
 
 
 def _scan_source(
@@ -192,8 +198,8 @@ def _scan_file(
                 """INSERT OR IGNORE INTO usage_events(
                     path,byte_offset,occurred_at,local_date,app,provider,model,
                     input_tokens,output_tokens,cached_input_tokens,
-                    cache_write_input_tokens,reasoning_output_tokens
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    cache_write_input_tokens,reasoning_output_tokens,event_key
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (str(path), line_offset, *event),
             )
         return committed_offset, app, provider, model
@@ -207,13 +213,31 @@ def _token_event(
     obj = None
     usage = None
     model = current_model
+    event_key = None
+    timestamp_value = None
     if adapter == "zcode" and b"model.sdk." in line and b"completed" in line:
         obj = _json(line)
         context = obj.get("context", {}) if obj else {}
         usage = context.get("usage") if isinstance(context, dict) else None
         model = context.get("modelId") or context.get("model") or model
         provider = context.get("providerId") or provider
-    elif b"token_count" in line:
+    elif adapter == "omp" and b'"usage"' in line and b'"assistant"' in line:
+        obj = _json(line)
+        message = obj.get("message", {}) if obj else {}
+        entry_id = obj.get("id") if obj else None
+        if (
+            obj and obj.get("type") == "message"
+            and isinstance(message, dict) and message.get("role") == "assistant"
+            and isinstance(entry_id, str) and entry_id
+        ):
+            usage = message.get("usage")
+            message_model = message.get("model")
+            message_provider = message.get("provider")
+            model = message_model if isinstance(message_model, str) and message_model else model
+            provider = message_provider if isinstance(message_provider, str) and message_provider else provider
+            event_key = f"omp:{entry_id}:{obj.get('timestamp', '')}"
+            timestamp_value = message.get("timestamp")
+    elif adapter in {"codex", "traex"} and b"token_count" in line:
         obj = _json(line)
         payload = obj.get("payload", {}) if obj else {}
         if obj and obj.get("type") == "event_msg" and payload.get("type") == "token_count":
@@ -228,24 +252,25 @@ def _token_event(
         if obj and obj.get("type") == "assistant":
             usage = message.get("usage")
             model = message.get("model") or model
-    if not obj or not usage:
+    if not obj or not isinstance(usage, dict) or not usage:
         return None
-    occurred_at = _timestamp(obj.get("timestamp"))
+    occurred_at = _timestamp(timestamp_value) or _timestamp(obj.get("timestamp"))
     if occurred_at is None:
         return None
     local_date = datetime.fromtimestamp(occurred_at, local_tz).date().isoformat()
     return (
         occurred_at, local_date, app, provider, model,
-        _usage_number(usage, "input_tokens", "inputTokens"),
-        _usage_number(usage, "output_tokens", "outputTokens"),
+        _usage_number(usage, "input_tokens", "inputTokens", "input"),
+        _usage_number(usage, "output_tokens", "outputTokens", "output"),
         _usage_number(
-            usage, "cached_input_tokens", "cache_read_input_tokens", "cachedInputTokens", "cacheReadTokens"
+            usage, "cached_input_tokens", "cache_read_input_tokens", "cachedInputTokens",
+            "cacheReadTokens", "cacheRead"
         ),
         _usage_number(
             usage, "cache_write_input_tokens", "cache_creation_input_tokens",
-            "cacheWriteInputTokens", "cacheCreationInputTokens", "cacheWriteTokens"
+            "cacheWriteInputTokens", "cacheCreationInputTokens", "cacheWriteTokens", "cacheWrite"
         ),
-        _usage_number(usage, "reasoning_output_tokens", "reasoningTokens"),
+        _usage_number(usage, "reasoning_output_tokens", "reasoningTokens"), event_key,
     )
 
 
@@ -256,7 +281,7 @@ def _usage_number(usage: dict[str, Any], *names: str) -> int:
             continue
         try:
             return max(0, int(float(value)))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
     return 0
 
@@ -273,7 +298,8 @@ def _json(line: bytes) -> dict[str, Any] | None:
 def _timestamp(value: Any) -> int | None:
     """Convert an ISO-8601 or Unix timestamp to epoch seconds."""
     if isinstance(value, (int, float)):
-        return int(value)
+        seconds = value / 1000 if value >= 10_000_000_000 else value
+        return int(seconds)
     if not isinstance(value, str):
         return None
     try:
@@ -284,7 +310,10 @@ def _timestamp(value: Any) -> int | None:
 
 def _default_app(adapter: str) -> str:
     """Return the default product label for a log adapter."""
-    return {"codex": "Codex CLI", "traex": "TraeX", "claude_code": "Claude Code", "zcode": "ZCode"}[adapter]
+    return {
+        "codex": "Codex CLI", "traex": "TraeX", "claude_code": "Claude Code",
+        "zcode": "ZCode", "omp": "OMP",
+    }[adapter]
 
 
 def _session_identity(adapter: str, payload: dict[str, Any]) -> tuple[str, str | None]:
@@ -315,7 +344,11 @@ def _event_rows(db: sqlite3.Connection, first_day: date) -> list[dict[str, Any]]
     rows = db.execute(
         """SELECT occurred_at,local_date,app,provider,model,input_tokens,output_tokens,
                   cached_input_tokens,cache_write_input_tokens,reasoning_output_tokens
-           FROM usage_events WHERE local_date >= ?""",
+           FROM usage_events AS event
+           WHERE local_date >= ? AND (event_key IS NULL OR NOT EXISTS (
+               SELECT 1 FROM usage_events AS earlier
+               WHERE earlier.event_key = event.event_key AND earlier.rowid < event.rowid
+           ))""",
         (first_day.isoformat(),),
     ).fetchall()
     return [dict(zip(columns, row)) for row in rows]

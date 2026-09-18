@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum RinqTab: String, CaseIterable {
@@ -27,14 +28,27 @@ struct RootView: View {
     let onLayoutChange: (PopoverLayout) -> Void
     let onAlertsDismissed: () -> Void
     @State private var tab: RinqTab = .rings
+    @State private var alertLayoutState: PopoverAlertLayoutState
+
+    init(
+        store: Store,
+        visibleScreenSize: CGSize,
+        onLayoutChange: @escaping (PopoverLayout) -> Void,
+        onAlertsDismissed: @escaping () -> Void
+    ) {
+        self.store = store
+        self.visibleScreenSize = visibleScreenSize
+        self.onLayoutChange = onLayoutChange
+        self.onAlertsDismissed = onAlertsDismissed
+        _alertLayoutState = State(initialValue: PopoverAlertLayoutState(hasAlerts: !store.alerts.isEmpty))
+    }
 
     private var layout: PopoverLayout {
         let rings = store.status?.rings ?? []
         return PopoverLayout.make(
-            ringCount: rings.count,
+            rings: rings,
             visibleScreenSize: visibleScreenSize,
-            hasAlerts: !store.alerts.isEmpty,
-            showsRingVisualization: !RingPresentation.quotaRings(rings).isEmpty
+            hasAlerts: alertLayoutState.reservesAlertSpace
         )
     }
 
@@ -53,18 +67,16 @@ struct RootView: View {
 
             Divider()
 
-            if !store.alerts.isEmpty {
-                Button {
-                    store.dismissAlerts()
-                    onAlertsDismissed()
-                } label: {
-                    AlertBanner(alerts: store.alerts)
+            if alertLayoutState.reservesAlertSpace {
+                ZStack {
+                    if !store.alerts.isEmpty {
+                        AlertBanner(alerts: store.alerts)
+                            .help("Click anywhere in this window to dismiss until the quota condition clears")
+                    }
                 }
-                .buttonStyle(.plain)
-                .help("Dismiss until the quota condition clears")
-                .accessibilityLabel("Dismiss quota alert")
+                .frame(height: PopoverLayout.alertBannerHeight)
                 .padding(.horizontal, 12)
-                .padding(.top, 10)
+                .padding(.top, PopoverLayout.alertSlotHeight - PopoverLayout.alertBannerHeight)
             }
 
             Group {
@@ -75,10 +87,51 @@ struct RootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider()
+
+            PopoverFooter()
         }
         .frame(width: layout.width, height: layout.height)
         .background(Color(NSColor.windowBackgroundColor))
+        .contentShape(Rectangle())
+        .simultaneousGesture(
+            TapGesture().onEnded { dismissActiveAlerts() }
+        )
+        .accessibilityAction(named: Text("Dismiss quota alert")) { dismissActiveAlerts() }
         .onAppear { onLayoutChange(layout) }
         .onChange(of: layout) { onLayoutChange($0) }
+        .onChange(of: !store.alerts.isEmpty) { hasAlerts in
+            alertLayoutState.observe(hasAlerts: hasAlerts)
+        }
+    }
+
+    private func dismissActiveAlerts() {
+        var dismissed = false
+        withAnimation(nil) { dismissed = store.dismissAlerts() }
+        if dismissed { onAlertsDismissed() }
+    }
+}
+
+/// A persistent bottom bar. Provides an explicit way to quit the menu-bar app,
+/// which otherwise has no window chrome or app menu.
+struct PopoverFooter: View {
+    var body: some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            Button {
+                NSApplication.shared.terminate(nil)
+            } label: {
+                Label("Quit Rinq", systemImage: "power")
+                    .font(.system(size: 11, weight: .medium))
+                    .labelStyle(.titleAndIcon)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Quit the Rinq menu-bar app")
+            .accessibilityLabel("Quit Rinq")
+        }
+        .padding(.horizontal, 14)
+        .frame(height: PopoverLayout.footerHeight)
     }
 }

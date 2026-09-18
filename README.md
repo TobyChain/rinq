@@ -6,7 +6,7 @@
 
 **See AI quota and local coding-agent usage before either becomes a problem.**
 
-Rinq is a glanceable AI usage monitor for Apple devices. It turns provider limits, API balances, and local Codex, TraeX, and Claude Code token counters into Activity-style rings, compact bars, and daily usage summaries.
+Rinq is a glanceable AI usage monitor for Apple devices. It turns provider limits, API balances, and local Codex, TraeX, Claude Code, and OMP token counters into Activity-style rings, compact bars, and daily usage summaries.
 
 The macOS menu-bar app is the fastest way to start: one script installs a loopback daemon, CLI, and native popover. iPhone, iPad, Apple Watch, widgets, and complications are available from source and can fetch supported provider quotas without a Mac.
 
@@ -70,6 +70,11 @@ The popover contains:
 - **Usage:** today, rolling week, per-day input/output, and per-app totals.
 - **Providers:** local credentials, vendor toggles, and drag-to-reorder.
 
+A footer at the bottom of the popover has a **Quit Rinq** button that stops the
+menu-bar app. The popover closes itself after 10 seconds without interaction;
+any click, scroll, key press, or pointer movement inside it resets the timer,
+and an active alert keeps it open until acknowledged.
+
 Update an existing installation:
 
 ```bash
@@ -103,8 +108,9 @@ Default locations:
 - Codex: `~/.codex/sessions`
 - TraeX: `~/.trae/cli/sessions`
 - Claude Code: `~/.claude/projects`
+- OMP / oh-my-pi: `~/.omp/agent/sessions`
 
-Rinq honors `CODEX_HOME`, `TRAE_HOME`, `TRAECLI_HOME`, `CLAUDE_CONFIG_DIR`, and `ZCODE_HOME`. Use `usage.extraSources` when a supported agent stores JSONL logs elsewhere. The incremental index lives at `~/.rinq/usage.sqlite3`; the default lookback is seven days.
+Rinq honors `CODEX_HOME`, `TRAE_HOME`, `TRAECLI_HOME`, `CLAUDE_CONFIG_DIR`, `ZCODE_HOME`, and OMP's `PI_CODING_AGENT_DIR`. Use `usage.extraSources` when a supported agent stores JSONL logs elsewhere. The incremental index lives at `~/.rinq/usage.sqlite3`; the default lookback is seven days.
 
 The macOS Providers tab also detects installed and running coding IDEs such as ZCode, MiMo Code/Desktop, and Trae CN. It reports the IDE's non-secret login/entitlement state and can open the vendor's official account connection page. Rinq never asks for a vendor password, reads browser cookies, or copies encrypted client credentials into `~/.rinq/config.json`.
 

@@ -141,8 +141,9 @@ outputTokens, cachedInputTokens, cacheWriteInputTokens, reasoningOutputTokens,
 totalTokens, and requests.
 
 The default sources are ~/.codex/sessions, ~/.trae/cli/sessions,
-~/.claude/projects, and ~/.zcode/cli/log. Set CODEX_HOME, TRAE_HOME/TRAECLI_HOME,
-CLAUDE_CONFIG_DIR, or ZCODE_HOME when a client stores logs elsewhere. Rinq
+~/.claude/projects, ~/.zcode/cli/log, and ~/.omp/agent/sessions. Set CODEX_HOME,
+TRAE_HOME/TRAECLI_HOME, CLAUDE_CONFIG_DIR, ZCODE_HOME, or PI_CODING_AGENT_DIR
+when a client stores logs elsewhere. Rinq
 reads only structured token counters from ZCode logs and uses an incremental
 index under ~/.rinq/usage.sqlite3; it does not retain prompts, responses, tool
 arguments, or credential values.

@@ -6,7 +6,7 @@
 
 **在额度或本地 Agent 用量影响工作之前，一眼看到问题。**
 
-Rinq 是面向 Apple 设备的 AI 用量监控应用。它将厂商限额、API 余额，以及本地 Codex、TraeX、Claude Code 的 token 计数，统一显示为活动圆环、紧凑进度条和每日用量摘要。
+Rinq 是面向 Apple 设备的 AI 用量监控应用。它将厂商限额、API 余额，以及本地 Codex、TraeX、Claude Code、OMP 的 token 计数，统一显示为活动圆环、紧凑进度条和每日用量摘要。
 
 macOS 菜单栏应用是最快的使用方式：一个脚本会安装本地 daemon、CLI 和原生弹窗。iPhone、iPad、Apple Watch、小组件和 complication 以源码提供，可在没有 Mac 中转的情况下直接获取受支持的厂商额度。
 
@@ -69,6 +69,8 @@ cd rinq
 - **Usage**：显示今日、滚动一周、逐日 input/output 和分应用汇总。
 - **Providers**：管理本地凭据、厂商开关和拖拽排序。
 
+弹窗底部的 footer 有一个 **Quit Rinq** 按钮，用于退出菜单栏应用。弹窗打开后若 10 秒内无交互会自动收起；在其中点击、滚动、按键或移动指针都会重置计时，存在活动告警时保持展开直到被确认。
+
 更新已有安装：
 
 ```bash
@@ -102,8 +104,9 @@ macOS Usage 页面读取原生本地 Agent 产生的结构化 token 计数。它
 - Codex：`~/.codex/sessions`
 - TraeX：`~/.trae/cli/sessions`
 - Claude Code：`~/.claude/projects`
+- OMP / oh-my-pi：`~/.omp/agent/sessions`
 
-Rinq 支持 `CODEX_HOME`、`TRAE_HOME`、`TRAECLI_HOME` 和 `CLAUDE_CONFIG_DIR`。如果受支持的 Agent 将 JSONL 日志存放在其他目录，可配置 `usage.extraSources`。增量索引位于 `~/.rinq/usage.sqlite3`，默认查看最近 7 天。
+Rinq 支持 `CODEX_HOME`、`TRAE_HOME`、`TRAECLI_HOME`、`CLAUDE_CONFIG_DIR`、`ZCODE_HOME` 和 OMP 的 `PI_CODING_AGENT_DIR`。如果受支持的 Agent 将 JSONL 日志存放在其他目录，可配置 `usage.extraSources`。增量索引位于 `~/.rinq/usage.sqlite3`，默认查看最近 7 天。
 
 集成能力按证据分级：ZCode 当前可以读取本地 OAuth/套餐状态和结构化 token 用量，但套餐 entitlement 本身不能作为已用/剩余额度圆环；MiMo Code/Desktop 和 Trae CN 可以检测安装状态，个人订阅余额在厂商提供稳定官方接口前保持 `unknown`。Copilot、Cursor、Windsurf、Gemini Code Assist、Zed、Cline、Roo Code 和 Kilo Code 也遵循同一规则，不从套餐价格、网页文字、浏览器 Cookie 或未公开接口推断实时剩余额度。
 

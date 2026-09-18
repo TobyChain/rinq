@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import XCTest
 @testable import RinqMenu
 
@@ -90,6 +92,47 @@ final class PopoverLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(layout.height + 28, 350)
         XCTAssertTrue(layout.scrolls)
     }
+
+    func testAlertLayoutReservesAVisibleSlot() {
+        let size = CGSize(width: 1440, height: 900)
+        let plain = PopoverLayout.make(ringCount: 4, visibleScreenSize: size)
+        let alert = PopoverLayout.make(ringCount: 4, visibleScreenSize: size, hasAlerts: true)
+
+        XCTAssertFalse(plain.reservesAlertSpace)
+        XCTAssertTrue(alert.reservesAlertSpace)
+        XCTAssertGreaterThan(alert.height, plain.height)
+        XCTAssertLessThanOrEqual(alert.height + 28, 450)
+    }
+
+    func testAlertLayoutStaysIdenticalAfterDismissalUntilPopoverCloses() {
+        var state = PopoverAlertLayoutState(hasAlerts: true)
+        let size = CGSize(width: 1440, height: 900)
+        let before = PopoverLayout.make(
+            ringCount: 4, visibleScreenSize: size, hasAlerts: state.reservesAlertSpace
+        )
+        state.observe(hasAlerts: false)
+        let after = PopoverLayout.make(
+            ringCount: 4, visibleScreenSize: size, hasAlerts: state.reservesAlertSpace
+        )
+
+        XCTAssertTrue(state.reservesAlertSpace)
+        XCTAssertEqual(after, before)
+    }
+
+    func testAlertSlotCanBeAddedWhilePopoverIsOpen() {
+        var state = PopoverAlertLayoutState(hasAlerts: false)
+        state.observe(hasAlerts: true)
+        XCTAssertTrue(state.reservesAlertSpace)
+    }
+
+    func testLayoutReservesFooterHeight() {
+        let size = CGSize(width: 1440, height: 900)
+        let layout = PopoverLayout.make(ringCount: 4, visibleScreenSize: size)
+        // The persistent quit footer must always fit inside the popover, so its
+        // height is part of the fixed chrome regardless of ring count.
+        XCTAssertGreaterThanOrEqual(layout.height, PopoverLayout.footerHeight)
+        XCTAssertLessThanOrEqual(layout.height + 28, 450)
+    }
 }
 
 final class MenuBarLayoutTests: XCTestCase {
@@ -119,6 +162,30 @@ final class MenuBarLayoutTests: XCTestCase {
             + CGFloat(count - 1) * layout.gap
         XCTAssertGreaterThanOrEqual(layout.barHeight, 1)
         XCTAssertLessThanOrEqual(layout.top * 2 + contentHeight, 18)
+    }
+}
+
+final class PopoverBackgroundTests: XCTestCase {
+    @MainActor
+    func testBackgroundConfigurationDoesNotPaintContentSubviews() {
+        let root = NSView()
+        let effect = NSVisualEffectView()
+        let content = NSView()
+        let label = NSTextField(labelWithString: "Rinq")
+        content.wantsLayer = true
+        label.wantsLayer = true
+        effect.addSubview(content)
+        content.addSubview(label)
+        root.addSubview(effect)
+
+        AppDelegate.configurePopoverBackground(root)
+
+        XCTAssertNotNil(root.layer?.backgroundColor)
+        XCTAssertEqual(effect.material, .windowBackground)
+        XCTAssertEqual(effect.blendingMode, .withinWindow)
+        XCTAssertEqual(effect.state, .inactive)
+        XCTAssertNil(content.layer?.backgroundColor)
+        XCTAssertNil(label.layer?.backgroundColor)
     }
 }
 
@@ -194,6 +261,55 @@ final class QuotaAlertTests: XCTestCase {
             usedValue: Double(used), totalValue: 100, valueUnit: "percent", status: nil,
             statusDetail: nil
         )
+    }
+}
+
+final class AlertDismissalTests: XCTestCase {
+    @MainActor
+    func testDismissAlertsAcknowledgesActiveAlertsOnlyOnce() {
+        let suite = "rinq-store-alert-tests-\(UUID().uuidString)"
+        let store = Store(alertDefaults: UserDefaults(suiteName: suite)!)
+        store.alerts = [QuotaAlert(
+            ringID: "codex-5h",
+            label: "Codex 5h",
+            level: .warning,
+            reason: .lowQuota,
+            message: "Codex 5h has 20% remaining"
+        )]
+
+        XCTAssertTrue(store.dismissAlerts())
+        XCTAssertTrue(store.alerts.isEmpty)
+        XCTAssertFalse(store.dismissAlerts())
+    }
+
+    @MainActor
+    func testRenderedPopoverSizeStaysStableAfterDismissal() {
+        let suite = "rinq-root-alert-tests-\(UUID().uuidString)"
+        let store = Store(alertDefaults: UserDefaults(suiteName: suite)!)
+        store.status = Status(rings: [Ring(
+            id: "codex-5h", label: "Codex 5h", vendor: "codex", kind: "window",
+            usedPercent: 80, remainingPercent: 20, remaining: nil, currency: nil,
+            resetsAt: nil, windowMins: 300, accent: "blue", spentUsd: nil, budgetUsd: nil,
+            usedValue: 80, totalValue: 100, valueUnit: "percent", status: nil, statusDetail: nil
+        )], updatedAt: nil)
+        store.alerts = [QuotaAlert(
+            ringID: "codex-5h", label: "Codex 5h", level: .warning, reason: .lowQuota,
+            message: "Codex 5h has 20% remaining"
+        )]
+        let root = RootView(
+            store: store, visibleScreenSize: CGSize(width: 1440, height: 900),
+            onLayoutChange: { _ in }, onAlertsDismissed: {}
+        )
+        let hosting = NSHostingView(rootView: root)
+        hosting.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        let before = hosting.fittingSize
+
+        XCTAssertTrue(store.dismissAlerts())
+        RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        hosting.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(hosting.fittingSize, before)
     }
 }
 

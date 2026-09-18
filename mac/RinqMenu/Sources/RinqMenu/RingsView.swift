@@ -45,7 +45,7 @@ struct RingArc: View {
                 .stroke(alertColor,
                         style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .opacity(pulse ? 0.55 : 1)
+                .opacity(isPulsing ? 0.55 : 1)
         }
         .onAppear { updatePulse(active: alert != nil) }
         .onChange(of: alert != nil) { active in updatePulse(active: active) }
@@ -63,6 +63,8 @@ struct RingArc: View {
     private var alertTrackColor: Color {
         alert == nil ? Palette.color(ring.accent) : alertColor
     }
+
+    private var isPulsing: Bool { alert != nil && pulse }
 
     private func updatePulse(active: Bool) {
         if active {
@@ -115,13 +117,13 @@ struct BarRow: View {
             }
         }
         .frame(minHeight: 38)
-        .padding(.vertical, alert == nil ? 0 : 4)
-        .background(alertColor.opacity(pulse ? 0.14 : 0.05), in: RoundedRectangle(cornerRadius: 8))
+        .background(alertColor.opacity(isPulsing ? 0.14 : 0.05), in: RoundedRectangle(cornerRadius: 8))
         .onAppear { updatePulse(active: alert != nil) }
         .onChange(of: alert != nil) { active in updatePulse(active: active) }
     }
 
     private var alert: QuotaAlert? { alerts.first { $0.ringID == ring.id } }
+    private var isPulsing: Bool { alert != nil && pulse }
 
     private var alertColor: Color {
         if !ring.hasQuotaValue { return .secondary }
@@ -173,11 +175,11 @@ struct AlertBanner: View {
                     .font(.system(size: 11, weight: .bold))
                 Text(alerts.prefix(2).map(\.message).joined(separator: " · "))
                     .font(.system(size: 10))
-                    .lineLimit(2)
+                    .lineLimit(1)
             }
             Spacer(minLength: 0)
-            Image(systemName: "xmark")
-                .font(.system(size: 9, weight: .bold))
+            Text("Click anywhere")
+                .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(.secondary)
         }
         .foregroundStyle(highestLevel == .critical ? .red : .orange)

@@ -239,6 +239,7 @@ private struct UsageSourcesView: View {
         case "traex": return "TraeX"
         case "codex": return "Codex"
         case "zcode": return "ZCode"
+        case "omp": return "OMP"
         default: return source.adapter
         }
     }
@@ -252,7 +253,7 @@ private struct UsageEmptyView: View {
                 .foregroundStyle(.secondary)
             Text("No local usage yet")
                 .font(.system(size: 14, weight: .semibold))
-            Text("Rinq reads token counters from local Codex, TraeX, Claude Code, and ZCode logs. Web sessions are not included.")
+            Text("Rinq reads token counters from local Codex, TraeX, Claude Code, OMP, and ZCode logs. Web sessions are not included.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
