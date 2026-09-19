@@ -14,7 +14,7 @@ DEFAULT_PORT = 7788
 # Vendor ids the app knows about, in default display order. The user reorders
 # and toggles these in the Settings UI; vendors with no credential and no
 # ChatGPT login are hidden automatically.
-VENDOR_IDS = ["codex", "minimax", "deepseek", "openai", "anthropic", "moonshot", "zhipu", "xiaomi"]
+VENDOR_IDS = ["codex", "minimax", "deepseek", "openai", "anthropic", "moonshot", "zhipu", "xiaomi", "jina"]
 
 DEFAULT_CONFIG = {
     "port": DEFAULT_PORT,
@@ -33,7 +33,8 @@ DEFAULT_CONFIG = {
     # not listed follows in default order.
     "ringOrder": ["codex-5h", "codex-week", "minimax-5h", "minimax-week",
                   "deepseek-balance", "openai-api", "anthropic-api",
-                  "moonshot-balance", "zhipu-balance", "xiaomi-balance"],
+                  "moonshot-balance", "zhipu-5h", "zhipu-week", "zhipu-balance",
+                  "xiaomi-balance", "jina-balance"],
     "budgetUsd": {"openai": 20.0, "anthropic": 20.0},
     # Reference top-up amount (same currency as the vendor's balance) used to
     # turn an absolute prepaid balance into a ring percentage. CNY for the
@@ -49,7 +50,10 @@ DEFAULT_CONFIG = {
     # Real collectors auto-discover credentials (cc-switch db, Codex login,
     # and the "keys" block above). Vendors with no credential are omitted from
     # /status entirely. Switch to ["mock"] for synthetic demo data.
-    "collectors": ["codex", "minimax", "deepseek", "openai", "anthropic", "moonshot", "zhipu", "xiaomi"],
+    "collectors": ["codex", "minimax", "deepseek", "openai", "anthropic", "moonshot", "zhipu", "xiaomi", "jina"],
+    # Overridable API hosts for providers that offer regional mirrors or proxies.
+    # Only the quota-lookup host is configurable; leave empty to use the default.
+    "hosts": {},
     "usage": {"lookbackDays": 7, "extraSources": []},
     "focus": {"breakEveryMins": 50, "breakMins": 10},
     "push": {

@@ -93,11 +93,12 @@ The daemon listens on `127.0.0.1:7788` by default. Useful local endpoints are `/
 | OpenAI API | Organization spend | Admin API key |
 | DeepSeek | Balance | API key or cc-switch |
 | Kimi / Moonshot | Balance | API key |
-| GLM / Zhipu | Balance | API key |
-| Xiaomi MiMo | Balance when a supported endpoint is available | API key |
-| Claude API | Organization spend when configured | Admin API key |
+| GLM / Zhipu | Coding-plan windows, or prepaid balance | API key |
+| Jina AI | Shared token pool remaining | API key |
+| Xiaomi MiMo | Not supported yet | API key |
+| Claude API | Not supported yet | Admin API key |
 
-Providers without a usable credential are hidden. Balance rings use the configured `balanceFull` value as their reference total. ChatGPT/Codex relies on an unofficial subscription endpoint and is intended for self-built or sideloaded apps, not App Store distribution.
+Providers without a usable credential are hidden. Balance rings use the configured `balanceFull` value as their reference total. GLM coding-plan keys show rolling 5-hour and weekly request windows; pay-as-you-go keys fall back to a prepaid balance. Jina reports its shared Embeddings/Reranker/Reader/Search token pool; its dashboard host is `hosts.jina` / `JINA_DASHBOARD_HOST` (default `embeddings-dashboard-api.jinaai.cn`, use `embeddings-dashboard-api.jina.ai` for the international host). Xiaomi MiMo and Claude API have no implemented live-quota route yet and show an explicit "Not supported" card when enabled. ChatGPT/Codex relies on an unofficial subscription endpoint and is intended for self-built or sideloaded apps, not App Store distribution.
 
 ## Local Token Usage
 

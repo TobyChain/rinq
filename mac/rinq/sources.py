@@ -45,6 +45,7 @@ def has_vendor_credential(cfg: dict, vendor: str) -> bool:
         "openai": "OPENAI_ADMIN_KEY",
         "anthropic": "ANTHROPIC_ADMIN_KEY",
         "xiaomi": "XIAOMI_API_KEY",
+        "jina": "JINA_API_KEY",
     }.get(vendor, "")
     return bool(vendor_key(cfg, vendor, env_var))
 

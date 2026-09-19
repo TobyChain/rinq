@@ -196,6 +196,106 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(rings["codex-week"]["usedPercent"], 0)
         self.assertEqual(rings["codex-week"]["windowMins"], 10080)
 
+    def test_zhipu_parses_credit_limit_windows(self) -> None:
+        # GLM coding-plan keys return rolling CREDIT_LIMIT windows, not a balance.
+        data = {"data": {"level": "max", "limits": [
+            {"type": "CREDIT_LIMIT", "unit": 3, "number": 5, "usage": 28000,
+             "remaining": 27499, "nextResetTime": 1789755038034},
+            {"type": "CREDIT_LIMIT", "unit": 6, "number": 1, "usage": 140000,
+             "remaining": 139499, "nextResetTime": 1790340034980},
+        ]}}
+        cfg = {"keys": {"zhipu": "id.secret"}}
+        original = collectors._get_json
+        collectors._get_json = lambda *_a, **_k: data
+        try:
+            rings = {r["id"]: r for r in collectors._zhipu(cfg)}
+        finally:
+            collectors._get_json = original
+        self.assertIn("zhipu-5h", rings)
+        self.assertIn("zhipu-week", rings)
+        self.assertEqual(rings["zhipu-5h"]["kind"], "window")
+        self.assertEqual(rings["zhipu-5h"]["usedValue"], 501)
+        self.assertEqual(rings["zhipu-5h"]["totalValue"], 28000)
+        self.assertEqual(rings["zhipu-5h"]["usedPercent"], 2)
+        self.assertEqual(rings["zhipu-5h"]["windowMins"], 300)
+        self.assertEqual(rings["zhipu-5h"]["resetsAt"], 1789755038)
+        self.assertEqual(rings["zhipu-week"]["windowMins"], 10080)
+        self.assertEqual(rings["zhipu-week"]["usedValue"], 501)
+        self.assertEqual(rings["zhipu-week"]["totalValue"], 140000)
+
+    def test_zhipu_falls_back_to_balance_when_no_windows(self) -> None:
+        # A pay-as-you-go key returns a prepaid balance; render as a balance ring.
+        data = {"data": {"balance": 42.5}}
+        cfg = {"keys": {"zhipu": "id.secret"}, "balanceFull": {"zhipu": 100.0}}
+        original = collectors._get_json
+        collectors._get_json = lambda *_a, **_k: data
+        try:
+            rings = collectors._zhipu(cfg)
+        finally:
+            collectors._get_json = original
+        self.assertEqual(rings[0]["id"], "zhipu-balance")
+        self.assertEqual(rings[0]["remaining"], 42.5)
+
+    def test_minimax_falls_back_to_first_model_without_general(self) -> None:
+        data = {"model_remains": [{
+            "model_name": "abab6.5", "end_time": 1788868800000,
+            "current_interval_remaining_percent": 40,
+            "weekly_end_time": 1789315200000,
+            "current_weekly_remaining_percent": 90,
+        }]}
+        rings = {r["id"]: r for r in collectors._minimax_rings(data)}
+        self.assertEqual(rings["minimax-5h"]["usedPercent"], 60)
+        self.assertEqual(rings["minimax-week"]["usedPercent"], 10)
+
+    def test_jina_parses_wallet_token_balance(self) -> None:
+        data = {"wallet": {"total_balance": 8_200_000, "total_amount": 10_000_000}}
+        cfg = {"keys": {"jina": "jina_test_key"}}
+        original = collectors._get_json
+        captured = {}
+        def fake(url, key, *a, **k):
+            captured["url"] = url
+            return data
+        collectors._get_json = fake
+        try:
+            rings = collectors._jina(cfg)
+        finally:
+            collectors._get_json = original
+        self.assertEqual(rings[0]["id"], "jina-balance")
+        self.assertEqual(rings[0]["remaining"], 8_200_000)
+        self.assertEqual(rings[0]["usedValue"], 1_800_000)
+        self.assertEqual(rings[0]["totalValue"], 10_000_000)
+        self.assertEqual(rings[0]["usedPercent"], 18)
+        self.assertEqual(rings[0]["valueUnit"], "tokens")
+        # Default host is the .cn mirror and the key rides in the query string.
+        self.assertIn("embeddings-dashboard-api.jinaai.cn", captured["url"])
+        self.assertIn("api_key=jina_test_key", captured["url"])
+
+    def test_jina_host_is_overridable(self) -> None:
+        cfg = {"keys": {"jina": "k"}, "hosts": {"jina": "embeddings-dashboard-api.jina.ai"}}
+        original = collectors._get_json
+        captured = {}
+        collectors._get_json = lambda url, *a, **k: (captured.__setitem__("url", url), {"wallet": {"total_balance": 1}})[1]
+        try:
+            collectors._jina(cfg)
+        finally:
+            collectors._get_json = original
+        self.assertIn("embeddings-dashboard-api.jina.ai", captured["url"])
+
+    def test_jina_no_key_returns_no_rings(self) -> None:
+        os.environ.pop("JINA_API_KEY", None)
+        self.assertEqual(collectors._jina({}), [])
+
+    def test_unsupported_vendor_shows_not_supported_status(self) -> None:
+        # anthropic/xiaomi have no live-quota route; enabling with a key must not
+        # claim "quota unavailable" (which implies a transient failure).
+        cfg = {
+            "collectors": ["xiaomi"], "enabled": {"xiaomi": True},
+            "keys": {"xiaomi": "test-key"}, "ringOrder": [],
+        }
+        rings = collectors.collect(cfg)
+        self.assertEqual([r["id"] for r in rings], ["xiaomi-status"])
+        self.assertEqual(rings[0]["status"], "quota_unsupported")
+
 class IntegrationTests(unittest.TestCase):
     def test_undetected_integrations_are_hidden(self) -> None:
         home = Path(tempfile.mkdtemp(prefix="rinq-no-integrations-"))

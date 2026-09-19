@@ -38,6 +38,8 @@ enum TRProviders {
             return key.isEmpty ? [] : await fetchZhipu(key: key)
         case .openai:
             return key.isEmpty ? [] : await fetchOpenAISpend(key: key)
+        case .jina:
+            return key.isEmpty ? [] : await fetchJina(key: key)
         }
     }
 
@@ -173,12 +175,44 @@ enum TRProviders {
                        valueUnit: "CNY", status: nil)]
     }
 
-    // MARK: - Zhipu / GLM (best effort)
+    // MARK: - Zhipu / GLM
 
     private static func fetchZhipu(key: String) async -> [TRRing] {
         guard let json = await getJSON("https://open.bigmodel.cn/api/monitor/usage/quota/limit",
                                       headers: ["Authorization": "Bearer \(key)"]) else { return [] }
         let d = (json["data"] as? [String: Any]) ?? json
+        // Coding-plan keys return rolling CREDIT_LIMIT windows; render as windows.
+        if let limits = d["limits"] as? [[String: Any]], !limits.isEmpty {
+            let now = Int(Date().timeIntervalSince1970)
+            var rings: [TRRing] = []
+            for entry in limits {
+                guard let cap = double(entry["usage"] ?? entry["limit"] ?? entry["total"]), cap > 0,
+                      let remaining = double(entry["remaining"] ?? entry["remaining_amount"]) else { continue }
+                let used = max(0, cap - remaining)
+                let resetMs = int(entry["nextResetTime"] ?? entry["next_reset_time"])
+                let resetsAt = resetMs.map { $0 / 1000 }
+                let unit = int(entry["unit"]) ?? 0
+                let number = int(entry["number"]) ?? 1
+                let unitMinutes = [1: 1, 2: 60, 3: 60, 4: 1440, 5: 43200, 6: 10080]
+                let windowMins: Int
+                if let m = unitMinutes[unit] { windowMins = m * number }
+                else if let r = resetsAt { windowMins = max(1, (r - now) / 60) }
+                else { windowMins = 300 }
+                let rid: String
+                let suffix: String
+                let accent: String
+                if windowMins <= 300 { rid = "zhipu-5h"; suffix = "5h"; accent = "red" }
+                else if windowMins >= 10080 { rid = "zhipu-week"; suffix = "week"; accent = "indigo" }
+                else { rid = "zhipu-w\(unit)-\(number)"; suffix = "\(number)u\(unit)"; accent = "red" }
+                rings.append(TRRing(id: rid, label: "GLM \(suffix)", vendor: "zhipu", kind: "window",
+                                    usedPercent: clamp(Int(used / cap * 100)), remainingPercent: nil,
+                                    remaining: nil, currency: nil,
+                                    resetsAt: resetsAt, windowMins: windowMins, accent: accent,
+                                    spentUsd: nil, budgetUsd: nil,
+                                    usedValue: used, totalValue: cap, valueUnit: "requests", status: nil))
+            }
+            if !rings.isEmpty { return rings }
+        }
         guard let balance = double(d["balance"] ?? d["available_balance"] ?? d["total_balance"]) else { return [] }
         let full = 100.0
         let used = max(0, full - balance)
@@ -188,6 +222,35 @@ enum TRProviders {
                        resetsAt: nil, windowMins: nil, accent: "red",
                        spentUsd: nil, budgetUsd: nil, usedValue: used, totalValue: full,
                        valueUnit: "CNY", status: nil)]
+    }
+
+    // MARK: - Jina shared token pool
+
+    private static func fetchJina(key: String) async -> [TRRing] {
+        let host = "embeddings-dashboard-api.jinaai.cn"
+        let encoded = key.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? key
+        let url = "https://\(host)/api/v1/api_key/user?api_key=\(encoded)"
+        guard let json = await getJSON(url, headers: [:]) else { return [] }
+        let wallet = (json["wallet"] as? [String: Any]) ?? json
+        guard let remaining = double(wallet["total_balance"] ?? wallet["trial_balance"]
+                                     ?? wallet["balance"] ?? wallet["remaining_tokens"]) else { return [] }
+        let total = double(wallet["total_amount"] ?? wallet["total_tokens"] ?? wallet["quota"])
+        if let total, total > 0 {
+            let used = max(0, total - remaining)
+            return [TRRing(id: "jina-balance", label: "Jina", vendor: "jina", kind: "balance",
+                           usedPercent: clamp(Int(used / total * 100)),
+                           remainingPercent: clamp(Int(remaining / total * 100)),
+                           remaining: remaining, currency: "tokens",
+                           resetsAt: nil, windowMins: nil, accent: "teal",
+                           spentUsd: nil, budgetUsd: nil, usedValue: used, totalValue: total,
+                           valueUnit: "tokens", status: nil)]
+        }
+        return [TRRing(id: "jina-balance", label: "Jina", vendor: "jina", kind: "balance",
+                       usedPercent: nil, remainingPercent: nil,
+                       remaining: remaining, currency: "tokens",
+                       resetsAt: nil, windowMins: nil, accent: "teal",
+                       spentUsd: nil, budgetUsd: nil, usedValue: nil, totalValue: nil,
+                       valueUnit: "tokens", status: nil)]
     }
 
     // MARK: - OpenAI admin spend (best effort; sums month-to-date USD)

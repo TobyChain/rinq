@@ -4,6 +4,7 @@ import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from typing import Any
@@ -131,6 +132,20 @@ def _mock(_cfg: dict) -> list[dict[str, Any]]:
             "budgetUsd": 20.0,
             "accent": "orange",
         },
+        {
+            "id": "jina-balance",
+            "label": "Jina",
+            "vendor": "jina",
+            "kind": "balance",
+            "usedPercent": clamp_pct(18),
+            "remainingPercent": clamp_pct(82),
+            "remaining": 8_200_000,
+            "currency": "tokens",
+            "usedValue": 1_800_000,
+            "totalValue": 10_000_000,
+            "valueUnit": "tokens",
+            "accent": "teal",
+        },
     ]
 
 
@@ -189,19 +204,26 @@ def _deepseek(cfg: dict) -> list[dict[str, Any]]:
     if not key:
         return []
     data = _get_json("https://api.deepseek.com/user/balance", key)
+    if not data:
+        return []
     remaining = None
-    if data:
-        for info in data.get("balance_infos", []):
-            if info.get("currency") == "CNY":
-                try:
-                    remaining = float(info.get("total_balance"))
-                except (TypeError, ValueError):
-                    pass
-    if remaining is None and data:
+    for info in data.get("balance_infos", []):
+        if info.get("currency") == "CNY":
+            remaining = _first_number(info, "total_balance")
+            if remaining is not None:
+                break
+    if remaining is None:
         try:
-            remaining = float(data.get("balance_infos", [{}])[0].get("total_balance"))
-        except (TypeError, ValueError, IndexError, KeyError):
+            remaining = _first_number(data.get("balance_infos", [{}])[0], "total_balance")
+        except (IndexError, KeyError, TypeError):
             remaining = None
+    if remaining is None:
+        # A subscription key may return rolling windows instead of a balance.
+        windows = _credit_limit_windows(
+            data.get("data", data), vid="deepseek", label="DeepSeek", accent="teal"
+        )
+        if windows:
+            return windows
     return [_balance_ring(cfg, vid="deepseek", label="DeepSeek", accent="teal",
                           remaining=remaining, currency="CNY")]
 
@@ -211,15 +233,14 @@ def _moonshot(cfg: dict) -> list[dict[str, Any]]:
     if not key:
         return []
     data = _get_json("https://api.moonshot.cn/v1/users/me/balance", key)
-    remaining = None
-    if data:
-        d = data.get("data", data)
-        for field in ("available_balance", "balance", "total_balance"):
-            try:
-                remaining = float(d.get(field))
-                break
-            except (TypeError, ValueError):
-                continue
+    if not data:
+        return []
+    body = data.get("data", data)
+    remaining = _first_number(body, "available_balance", "balance", "total_balance")
+    if remaining is None:
+        windows = _credit_limit_windows(body, vid="moonshot", label="Kimi", accent="purple")
+        if windows:
+            return windows
     return [_balance_ring(cfg, vid="moonshot", label="Kimi", accent="purple",
                           remaining=remaining, currency="CNY")]
 
@@ -228,20 +249,93 @@ def _zhipu(cfg: dict) -> list[dict[str, Any]]:
     key = sources.vendor_key(cfg, "zhipu", "ZHIPU_API_KEY")
     if not key:
         return []
-    # No stable documented personal balance route; hit the resource endpoint and
-    # degrade to unknown if the shape does not carry a remaining amount.
     data = _get_json("https://open.bigmodel.cn/api/monitor/usage/quota/limit", key)
-    remaining = None
-    if data:
-        d = data.get("data", data)
-        for field in ("balance", "remaining_amount", "available_balance", "total_balance"):
-            try:
-                remaining = float(d.get(field))
-                break
-            except (TypeError, ValueError):
-                continue
+    if not data:
+        return []
+    body = data.get("data", data) if isinstance(data, dict) else {}
+    # Coding-plan / subscription keys return rolling rate-limit windows, not a
+    # prepaid CNY balance. Render those as window rings like Codex.
+    windows = _credit_limit_windows(body, vid="zhipu", label="GLM", accent="red")
+    if windows:
+        return windows
+    # Fall back to a prepaid balance shape for pay-as-you-go keys.
+    remaining = _first_number(body, "balance", "remaining_amount", "available_balance", "total_balance")
     return [_balance_ring(cfg, vid="zhipu", label="GLM", accent="red",
                           remaining=remaining, currency="CNY")]
+
+
+# Zhipu/GLM report each window as a CREDIT_LIMIT entry with a time unit code and
+# a count. Map the common codes to minutes; fall back to the reset horizon.
+_CREDIT_UNIT_MINUTES = {1: 1, 2: 60, 3: 60, 4: 1440, 5: 43200, 6: 10080}
+
+
+def _credit_limit_windows(
+    body: dict[str, Any], *, vid: str, label: str, accent: str
+) -> list[dict[str, Any]]:
+    """Parse a `limits` array of rolling usage windows into window rings.
+
+    Recognizes the shape used by GLM's quota/limit endpoint: each entry carries
+    `usage` (window cap), `remaining`, `nextResetTime` (epoch ms) and a
+    `unit`/`number` window size. Returns [] when the shape is absent so callers
+    can fall back to a balance reading.
+    """
+    if not isinstance(body, dict):
+        return []
+    limits = body.get("limits")
+    if not isinstance(limits, list) or not limits:
+        return []
+    rings: list[dict[str, Any]] = []
+    now = int(time.time())
+    for entry in limits:
+        if not isinstance(entry, dict):
+            continue
+        cap = _first_number(entry, "usage", "limit", "total")
+        remaining = _first_number(entry, "remaining", "remaining_amount")
+        if cap is None or remaining is None or cap <= 0:
+            continue
+        used = max(0.0, cap - remaining)
+        reset_ms = entry.get("nextResetTime") or entry.get("next_reset_time")
+        resets_at = int(reset_ms) // 1000 if isinstance(reset_ms, (int, float)) else None
+        unit = entry.get("unit")
+        number = entry.get("number") or 1
+        if isinstance(unit, int) and unit in _CREDIT_UNIT_MINUTES:
+            window_mins = int(_CREDIT_UNIT_MINUTES[unit] * number)
+        elif resets_at:
+            window_mins = max(1, round((resets_at - now) / 60))
+        else:
+            window_mins = 300
+        if window_mins <= 300:
+            rid, suffix, ring_accent = f"{vid}-5h", "5h", accent
+        elif window_mins >= 10080:
+            rid, suffix, ring_accent = f"{vid}-week", "week", "indigo"
+        else:
+            rid, suffix, ring_accent = f"{vid}-w{unit}-{number}", f"{number}u{unit}", accent
+        rings.append({
+            "id": rid,
+            "label": f"{label} {suffix}",
+            "vendor": vid,
+            "kind": "window",
+            "usedPercent": clamp_pct(used / cap * 100.0),
+            "usedValue": int(used),
+            "totalValue": int(cap),
+            "valueUnit": "requests",
+            "resetsAt": resets_at,
+            "windowMins": window_mins,
+            "accent": ring_accent,
+        })
+    return rings
+
+
+def _first_number(obj: dict[str, Any], *names: str) -> float | None:
+    """Return the first field in `names` that parses as a number, else None."""
+    if not isinstance(obj, dict):
+        return None
+    for name in names:
+        try:
+            return float(obj[name])
+        except (KeyError, TypeError, ValueError):
+            continue
+    return None
 
 
 def _minimax(cfg: dict) -> list[dict[str, Any]]:
@@ -257,10 +351,11 @@ def _minimax(cfg: dict) -> list[dict[str, Any]]:
 
 
 def _minimax_rings(data: dict[str, Any]) -> list[dict[str, Any]]:
-    general = next(
-        (m for m in data.get("model_remains", []) if m.get("model_name") == "general"),
-        None,
-    )
+    models = data.get("model_remains") or []
+    general = next((m for m in models if m.get("model_name") == "general"), None)
+    # Fall back to the first reported model when a plan exposes no "general" pool.
+    if general is None:
+        general = models[0] if models else None
     if general is None:
         return []
     interval_used = int(general.get("current_interval_usage_count", 0))
@@ -406,6 +501,53 @@ def _anthropic(cfg: dict) -> list[dict[str, Any]]:
     return []
 
 
+# Jina's shared token pool (Embeddings/Reranker/Reader/Search) is queried
+# through the dashboard key endpoint. The host is overridable for users behind a
+# mirror or proxy. Default to the mainland (.cn) dashboard mirror, matching the
+# r.jinaai.cn / s.jinaai.cn service family; set hosts.jina (or
+# JINA_DASHBOARD_HOST) to "embeddings-dashboard-api.jina.ai" for the intl host.
+_JINA_DASHBOARD_HOST_DEFAULT = "embeddings-dashboard-api.jinaai.cn"
+
+
+def _jina(cfg: dict) -> list[dict[str, Any]]:
+    key = sources.vendor_key(cfg, "jina", "JINA_API_KEY")
+    if not key:
+        return []
+    host = ((cfg.get("hosts") or {}).get("jina")
+            or os.environ.get("JINA_DASHBOARD_HOST")
+            or _JINA_DASHBOARD_HOST_DEFAULT)
+    # The dashboard passes the key as a query parameter, not a bearer header.
+    url = f"https://{host}/api/v1/api_key/user?api_key={urllib.parse.quote(key, safe='')}"
+    data = _get_json(url, key)
+    if not isinstance(data, dict):
+        return []
+    wallet = data.get("wallet") if isinstance(data.get("wallet"), dict) else data
+    remaining = _first_number(wallet, "total_balance", "trial_balance", "balance", "remaining_tokens")
+    total = _first_number(wallet, "total_amount", "total_tokens", "quota")
+    if remaining is None:
+        return []
+    ring: dict[str, Any] = {
+        "id": "jina-balance",
+        "label": "Jina",
+        "vendor": "jina",
+        "kind": "balance",
+        "usedPercent": None,
+        "remaining": round(remaining, 2),
+        "currency": "tokens",
+        "accent": "teal",
+    }
+    if total is not None and total > 0:
+        used = max(0.0, total - remaining)
+        ring["usedPercent"] = clamp_pct(used / total * 100.0)
+        ring["remainingPercent"] = clamp_pct(remaining / total * 100.0)
+        ring["usedValue"] = round(used, 2)
+        ring["totalValue"] = round(total, 2)
+        ring["valueUnit"] = "tokens"
+    else:
+        ring["remainingPercent"] = None
+    return [ring]
+
+
 def _month_end_epoch() -> int:
     now = datetime.now(timezone.utc)
     nxt = now.replace(year=now.year + 1, month=1, day=1) if now.month == 12 else now.replace(month=now.month + 1, day=1)
@@ -422,6 +564,7 @@ _COLLECTORS = {
     "zhipu": _zhipu,
     "minimax": _minimax,
     "xiaomi": _xiaomi,
+    "jina": _jina,
 }
 
 _STATUS_META = {
@@ -433,7 +576,13 @@ _STATUS_META = {
     "moonshot": ("Kimi / Moonshot", "purple"),
     "zhipu": ("GLM / Zhipu", "red"),
     "xiaomi": ("Xiaomi MiMo", "orange"),
+    "jina": ("Jina AI", "teal"),
 }
+
+# Vendors with no implemented live-quota route. Adding a key does not produce a
+# ring, so they get an explicit "not supported yet" status instead of the
+# misleading "connected, but quota unavailable" wording.
+_QUOTA_UNSUPPORTED_VENDORS = {"anthropic", "xiaomi"}
 
 
 def _status_ring(vendor: str, status: str) -> dict[str, Any]:
@@ -441,6 +590,7 @@ def _status_ring(vendor: str, status: str) -> dict[str, Any]:
     detail = {
         "not_connected": "Connect an account or add a credential",
         "quota_unavailable": "Connected, but live quota is unavailable",
+        "quota_unsupported": "Live quota not supported for this provider yet",
     }[status]
     return {
         "id": f"{vendor}-status",
@@ -482,7 +632,12 @@ def collect(cfg: dict) -> list[dict[str, Any]]:
             # is available. The status item is not a percentage and does not
             # participate in quota alerts.
             if enabled.get(name) is True and not collected and name in _STATUS_META:
-                status = "quota_unavailable" if sources.has_vendor_credential(cfg, name) else "not_connected"
+                if not sources.has_vendor_credential(cfg, name):
+                    status = "not_connected"
+                elif name in _QUOTA_UNSUPPORTED_VENDORS:
+                    status = "quota_unsupported"
+                else:
+                    status = "quota_unavailable"
                 rings.append(_status_ring(name, status))
     # Hide rings for vendors the user explicitly turned off.
     rings = [r for r in rings if enabled.get(r.get("vendor"), True) is not False]

@@ -283,6 +283,7 @@ extension Ring {
     var usageText: String {
         if status == "not_connected" { return "Not connected" }
         if status == "quota_unavailable" { return "Unavailable" }
+        if status == "quota_unsupported" { return "Not supported" }
         guard let usedValue, let totalValue else {
             return "Quota unavailable"
         }
@@ -290,6 +291,9 @@ extension Ring {
     }
 
     private func formatValue(_ value: Double) -> String {
+        if valueUnit == "tokens" {
+            return formatHoverTokenCount(Int(value.rounded()))
+        }
         let number = value.rounded() == value
             ? String(format: "%.0f", value)
             : String(format: "%.2f", value)

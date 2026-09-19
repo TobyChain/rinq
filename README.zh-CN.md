@@ -89,11 +89,12 @@ daemon 默认监听 `127.0.0.1:7788`。主要本地接口为 `/status`、`/usage
 | OpenAI API | 组织级消费金额 | Admin API Key |
 | DeepSeek | 余额 | API Key 或 cc-switch |
 | Kimi / Moonshot | 余额 | API Key |
-| GLM / 智谱 | 余额 | API Key |
-| 小米 MiMo | 存在受支持接口时显示余额 | API Key |
-| Claude API | 配置组织级接口后显示消费金额 | Admin API Key |
+| GLM / 智谱 | Coding Plan 限额，或预付余额 | API Key |
+| Jina AI | 共享 token 池剩余量 | API Key |
+| 小米 MiMo | 暂不支持 | API Key |
+| Claude API | 暂不支持 | Admin API Key |
 
-没有可用凭据的厂商不会显示。余额类圆环使用配置中的 `balanceFull` 作为参考总额。ChatGPT/Codex 依赖非官方订阅接口，仅适用于自行构建或侧载的应用，不应进入 App Store 构建。
+没有可用凭据的厂商不会显示。余额类圆环使用配置中的 `balanceFull` 作为参考总额。GLM 的 Coding Plan Key 显示滚动的 5 小时和周请求限额，按量付费 Key 则回退为预付余额。Jina 显示其 Embeddings/Reranker/Reader/Search 共享 token 池；dashboard 主机由 `hosts.jina` 或 `JINA_DASHBOARD_HOST` 配置（默认 `embeddings-dashboard-api.jinaai.cn`，国际站用 `embeddings-dashboard-api.jina.ai`）。小米 MiMo 和 Claude API 暂无可用的实时额度接口，启用后显示明确的“暂不支持”卡片。ChatGPT/Codex 依赖非官方订阅接口，仅适用于自行构建或侧载的应用，不应进入 App Store 构建。
 
 ## 本地 token 用量
 

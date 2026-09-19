@@ -62,6 +62,12 @@ extension TRRing {
     }
 
     private func formatValue(_ value: Double) -> String {
+        if valueUnit == "tokens" {
+            let n = max(0, value)
+            if n >= 1_000_000_000 { return String(format: "%.1fB", n / 1_000_000_000) }
+            if n >= 100_000 { return String(format: "%.1fM", n / 1_000_000) }
+            return String(format: "%.1fK", n / 1_000)
+        }
         let number = value.rounded() == value
             ? String(format: "%.0f", value)
             : String(format: "%.2f", value)
@@ -76,7 +82,7 @@ extension TRRing {
 
 /// A vendor quota source the app can fetch on its own (no Mac required).
 enum TRVendor: String, CaseIterable, Identifiable {
-    case chatgpt, minimax, deepseek, moonshot, zhipu, openai
+    case chatgpt, minimax, deepseek, moonshot, zhipu, openai, jina
     var id: String { rawValue }
 
     var displayName: String {
@@ -87,6 +93,7 @@ enum TRVendor: String, CaseIterable, Identifiable {
         case .moonshot: return "Kimi (Moonshot)"
         case .zhipu: return "GLM (Zhipu)"
         case .openai: return "OpenAI API spend"
+        case .jina: return "Jina AI (search)"
         }
     }
 

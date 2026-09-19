@@ -21,6 +21,7 @@ VENDOR_META = {
     "moonshot": {"label": "Kimi (Moonshot)", "accent": "purple", "kind": "balance"},
     "zhipu": {"label": "GLM (Zhipu)", "accent": "red", "kind": "balance"},
     "xiaomi": {"label": "MiMo (Xiaomi)", "accent": "orange", "kind": "balance"},
+    "jina": {"label": "Jina AI (search)", "accent": "teal", "kind": "balance"},
 }
 
 
@@ -87,6 +88,7 @@ def _all_ring_ids() -> list[str]:
     value_ids = [
         "codex-5h", "codex-week", "minimax-5h", "minimax-week",
         "deepseek-balance", "openai-api", "anthropic-api",
-        "moonshot-balance", "zhipu-balance", "xiaomi-balance",
+        "moonshot-balance", "zhipu-5h", "zhipu-week", "zhipu-balance",
+        "xiaomi-balance", "jina-balance",
     ]
     return value_ids + [f"{vendor}-status" for vendor in cfg_mod.VENDOR_IDS]

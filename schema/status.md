@@ -61,8 +61,9 @@ the complication. All timestamps are Unix epoch seconds.
 ## Ring kinds
 
 All user-facing quota values use `usedValue / totalValue`. `valueUnit` is
-`percent`, `requests`, `USD`, or `CNY`; views format it consistently.
-`usedPercent` remains the normalized 0..100 fill used to draw the ring.
+`percent`, `requests`, `USD`, `CNY`, or `tokens`; views format it consistently
+(`tokens` uses K/M/B shorthand). `usedPercent` remains the normalized 0..100
+fill used to draw the ring.
 
 - `window` — a rate-limit window (5h, weekly). `resetsAt` is the next reset.
   `usedPercent` = quota consumed.
@@ -79,6 +80,10 @@ All user-facing quota values use `usedValue / totalValue`. `valueUnit` is
 - `rings[].usedPercent` is 0..100, already clamped by the collector. Use `null`
   with `"status": "unknown"` when the value cannot be obtained; never send a
   stale number without `updatedAt` reflecting it.
+- `status` on a `status`-kind ring is one of `not_connected` (no credential),
+  `quota_unavailable` (credential present but the live call failed), or
+  `quota_unsupported` (provider has no implemented live-quota route). These
+  render as grey, non-alerting cards.
 - `accent` is one of: `blue indigo green orange red purple teal`. Unknown
   values fall back to `blue` on the watch.
 - Events (`POST /event`) use states: `started completed failed waiting`.
@@ -120,15 +125,27 @@ tokens. Rinq does not read browser cookies or encrypted credential values.
 | `openai` | `OPENAI_ADMIN_KEY` | `/v1/organization/costs` | budget | route+shape |
 | `deepseek` | `DEEPSEEK_API_KEY` | `api.deepseek.com/user/balance` | balance | route (401), shape per docs |
 | `moonshot` (Kimi) | `MOONSHOT_API_KEY` | `api.moonshot.cn/v1/users/me/balance` | balance | route (401), shape best-effort |
-| `zhipu` (GLM) | `ZHIPU_API_KEY` | `open.bigmodel.cn/api/monitor/usage/quota/limit` | balance | route (401), shape best-effort |
+| `zhipu` (GLM) | `ZHIPU_API_KEY` | `open.bigmodel.cn/api/monitor/usage/quota/limit` | window (fallback balance) | live limits[] windows |
 | `minimax` | `MINIMAX_API_KEY` | `api.minimaxi.com/v1/api/openplatform/coding_plan/remains` | window | live 5h/week |
-| `xiaomi` (MiMo) | `XIAOMI_API_KEY` | no confirmed public route | balance | stub → unknown |
-| `anthropic` (Claude) | `ANTHROPIC_ADMIN_KEY` | Admin Usage & Cost API (org only) | budget | interface only |
+| `xiaomi` (MiMo) | `XIAOMI_API_KEY` | no confirmed public route | balance | stub → not supported |
+| `anthropic` (Claude) | `ANTHROPIC_ADMIN_KEY` | Admin Usage & Cost API (org only) | budget | stub → not supported |
+| `jina` | `JINA_API_KEY` | `embeddings-dashboard-api.jinaai.cn/api/v1/api_key/user` | balance (tokens) | route confirmed, shape `.wallet.total_balance` |
 
 "route (401)" means the endpoint exists and is auth-gated (probed without a
 real key); field parsing follows each vendor's published docs and degrades to
 `unknown` if the response shape differs. `codex` 5h/week comes from the local
 Codex ChatGPT login and the `chatgpt.com/backend-api/wham/usage` endpoint.
+
+`zhipu` returns rolling `CREDIT_LIMIT` windows (`limits[]` with `usage`,
+`remaining`, `nextResetTime`) for coding-plan keys; these render as window rings
+(5h/week) and fall back to a prepaid CNY balance when a `balance` field is
+present instead. `jina` reads the shared Embeddings/Reranker/Reader/Search token
+pool; the key is passed as an `api_key` query parameter and remaining tokens
+come from `.wallet.total_balance`. Its host is overridable via `hosts.jina` or
+`JINA_DASHBOARD_HOST` (default `embeddings-dashboard-api.jinaai.cn`; use
+`embeddings-dashboard-api.jina.ai` for the international host). `anthropic` and
+`xiaomi` have no implemented live-quota route and surface an explicit
+`quota_unsupported` status when enabled with a key.
 
 GET /usage returns token counters from local native coding-agent logs. Rinq
 reads only structured usage metadata; it does not retain prompt text, assistant
