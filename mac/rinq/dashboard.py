@@ -80,8 +80,10 @@ function formatValue(value, unit){
   return text;
 }
 function usageText(r){
-  if(r.usedValue!=null && r.totalValue!=null)
-    return formatValue(r.usedValue,r.valueUnit)+' / '+formatValue(r.totalValue,r.valueUnit);
+  if(r.usedValue!=null && r.totalValue!=null){
+    const base = formatValue(r.usedValue,r.valueUnit)+' / '+formatValue(r.totalValue,r.valueUnit);
+    return (r.valueUnit==='percent' || r.usedPercent==null) ? base : base+' · '+r.usedPercent+'%';
+  }
   return (r.usedPercent??0)+'% / 100%';
 }
 async function load(){

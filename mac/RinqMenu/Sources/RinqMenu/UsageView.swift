@@ -203,6 +203,7 @@ private struct AppUsageView: View {
                         }
                     }
                     .padding(.vertical, 3)
+                    .help(appHoverText(app))
                 }
             }
         }
@@ -215,6 +216,14 @@ private struct AppUsageView: View {
         if app.localizedCaseInsensitiveContains("trae") { return "wand.and.stars" }
         if app.localizedCaseInsensitiveContains("ide") { return "chevron.left.forwardslash.chevron.right" }
         return "terminal"
+    }
+
+    private func appHoverText(_ app: UsageApp) -> String {
+        let exact = NumberFormatter()
+        exact.numberStyle = .decimal
+        let input = exact.string(from: NSNumber(value: app.inputTokens)) ?? "\(app.inputTokens)"
+        let output = exact.string(from: NSNumber(value: app.outputTokens)) ?? "\(app.outputTokens)"
+        return "\(app.app)\ninput \(input) tokens\noutput \(output) tokens\n\(app.requests) requests"
     }
 }
 

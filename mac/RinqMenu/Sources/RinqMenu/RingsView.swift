@@ -47,6 +47,8 @@ struct RingArc: View {
                 .rotationEffect(.degrees(-90))
                 .opacity(isPulsing ? 0.55 : 1)
         }
+        .contentShape(Circle())
+        .help(ring.hoverText)
         .onAppear { updatePulse(active: alert != nil) }
         .onChange(of: alert != nil) { active in updatePulse(active: active) }
     }
@@ -118,6 +120,7 @@ struct BarRow: View {
         }
         .frame(minHeight: 38)
         .background(alertColor.opacity(isPulsing ? 0.14 : 0.05), in: RoundedRectangle(cornerRadius: 8))
+        .help(ring.hoverText)
         .onAppear { updatePulse(active: alert != nil) }
         .onChange(of: alert != nil) { active in updatePulse(active: active) }
     }
@@ -136,14 +139,7 @@ struct BarRow: View {
 
     private var detail: String {
         if let statusDetail = ring.statusDetail { return statusDetail }
-        if let reset = ring.resetsAt {
-            let s = Double(reset) - Date().timeIntervalSince1970
-            if s <= 0 { return "quota window ended" }
-            let m = Int(s / 60)
-            if m >= 1440 { return "resets in \(m / 1440)d" }
-            if m >= 60 { return "resets in \(m / 60)h \(m % 60)m" }
-            return "resets in \(m)m"
-        }
+        if let resetText = ring.resetText { return resetText }
         return "\(pct)%"
     }
 

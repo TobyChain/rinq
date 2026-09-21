@@ -1,24 +1,34 @@
 import AppKit
 import SwiftUI
 
-// RinqMenu: a menu-bar item showing the configured quota rings. Clicking opens
-// a native SwiftUI popover with the dashboard and a Settings tab for adding
-// provider keys, toggling vendors, and managing ring order. Data comes from
-// the rinq daemon (http://127.0.0.1:<port>).
+// RinqMenu: a menu-bar item showing the configured quota rings. Hovering the
+// item opens a native SwiftUI popover preview immediately; clicking pins it.
+// The popover shows the dashboard and a Settings tab for adding provider keys,
+// toggling vendors, and managing ring order. Data comes from the rinq daemon
+// (http://127.0.0.1:<port>).
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+final class AppDelegate: NSResponder, NSApplicationDelegate, NSPopoverDelegate {
     private var item: NSStatusItem!
     private var popover: NSPopover?
     private var store: Store!
     private var timer: Timer?
     private var idleCloseWorkItem: DispatchWorkItem?
     private var popoverEventMonitor: Any?
+    private var hoverCloseWorkItem: DispatchWorkItem?
+    /// True while the popover was opened by hovering the status item rather
+    /// than clicking it. Preview popovers close when the pointer leaves both
+    /// the item and the popover; click-opened popovers stay until dismissed.
+    private var popoverIsPreview = false
     private static let idleCloseInterval: TimeInterval = 10
+    /// Grace period between the pointer leaving the status item and closing a
+    /// preview popover, so the pointer can travel into the popover first.
+    private static let hoverCloseDelay: TimeInterval = 0.35
 
     func applicationDidFinishLaunching(_ note: Notification) {
         item = NSStatusBar.system.statusItem(withLength: 30)
         item.button?.target = self
         item.button?.action = #selector(toggle(_:))
+        installHoverTracking()
         // An .accessory agent app has no application menu, so the standard
         // clipboard key equivalents are never routed to the first responder and
         // an API key cannot be pasted into the Settings field. Install a main
@@ -43,7 +53,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     @objc private func toggle(_ sender: Any?) {
         if let pop = popover, pop.isShown { pop.performClose(sender); return }
+        openPopover(preview: false)
+    }
 
+    private func openPopover(preview: Bool) {
+        popoverIsPreview = preview
+        hoverCloseWorkItem?.cancel()
+        hoverCloseWorkItem = nil
         let screenSize = item.button?.window?.screen?.visibleFrame.size
             ?? NSScreen.main?.visibleFrame.size
             ?? NSSize(width: 1440, height: 900)
@@ -82,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             if let window = pop.contentViewController?.view.window,
                let content = window.contentView {
                 Self.configurePopoverBackground(content)
+                self.installPopoverTracking(in: content)
             }
         }
         startIdleAutoClose()
@@ -90,6 +107,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             render(rings: store.status?.rings ?? [], alerts: store.alerts)
         }
     }
+
+    // MARK: - Hover preview
+
+    // Hovering the status item opens the popover immediately as a preview;
+    // there is no tooltip delay. A preview popover closes shortly after the
+    // pointer leaves both the status item and the popover. Clicking the item
+    // pins the popover open instead.
+    private func installHoverTracking() {
+        guard let button = item.button else { return }
+        button.addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self
+        ))
+    }
+
+    private func installPopoverTracking(in content: NSView) {
+        content.addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hoverCloseWorkItem?.cancel()
+        hoverCloseWorkItem = nil
+        if popover?.isShown != true { openPopover(preview: true) }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        scheduleHoverClose()
+    }
+
+    private func scheduleHoverClose() {
+        guard popoverIsPreview, popover?.isShown == true else { return }
+        hoverCloseWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.popoverIsPreview,
+                  let pop = self.popover, pop.isShown else { return }
+            if self.pointerIsOverItemOrPopover() { return }
+            pop.performClose(nil)
+        }
+        hoverCloseWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hoverCloseDelay, execute: work)
+    }
+
+    private func pointerIsOverItemOrPopover() -> Bool {
+        let mouse = NSEvent.mouseLocation
+        if let button = item.button, let window = button.window {
+            let frame = window.convertToScreen(button.convert(button.bounds, to: nil))
+            if frame.contains(mouse) { return true }
+        }
+        if let popoverWindow = popover?.contentViewController?.view.window,
+           popoverWindow.frame.contains(mouse) {
+            return true
+        }
+        return false
+    }
+
 
     // MARK: - Idle auto-close
 
@@ -149,6 +226,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         cancelIdleAutoClose()
+        hoverCloseWorkItem?.cancel()
+        hoverCloseWorkItem = nil
+        popoverIsPreview = false
     }
 
     // MARK: - Main menu
@@ -219,7 +299,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             alerts.first(where: { $0.ringID == ring.id })?.level
         }
         item.button?.image = Self.progressBarImage(pcts: pcts, alertLevels: alertLevels)
-        item.button?.toolTip = rings.map { "\($0.label): \($0.usageText)" }.joined(separator: "\n")
     }
 
     private func pct(_ r: Ring) -> Int {

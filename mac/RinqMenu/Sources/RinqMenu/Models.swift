@@ -287,7 +287,14 @@ extension Ring {
         guard let usedValue, let totalValue else {
             return "Quota unavailable"
         }
-        return "\(formatValue(usedValue)) / \(formatValue(totalValue))"
+        return "\(formatValue(usedValue)) / \(formatValue(totalValue))" + usagePercentSuffix
+    }
+
+    /// Percent appended to "used / total" so credit quotas and prepaid balances
+    /// always surface a ratio, even when the detail line shows a reset countdown.
+    private var usagePercentSuffix: String {
+        guard let usedPercent, valueUnit != "percent" else { return "" }
+        return " · \(usedPercent)%"
     }
 
     private func formatValue(_ value: Double) -> String {
@@ -304,4 +311,32 @@ extension Ring {
         default: return number
         }
     }
+
+    /// Reset countdown shared by the bar-row detail line and hover tooltips.
+    var resetText: String? {
+        guard let reset = resetsAt else { return nil }
+        let s = Double(reset) - Date().timeIntervalSince1970
+        if s <= 0 { return "quota window ended" }
+        let m = Int(s / 60)
+        if m >= 1440 { return "resets in \(m / 1440)d" }
+        if m >= 60 { return "resets in \(m / 60)h \(m % 60)m" }
+        return "resets in \(m)m"
+    }
+
+    /// Multi-line tooltip shown when hovering a ring arc or bar row.
+    var hoverText: String {
+        var lines = [label, usageText]
+        if let usedPercent { lines.append("\(usedPercent)% used") }
+        if let remaining {
+            let number = remaining.rounded() == remaining
+                ? String(format: "%.0f", remaining)
+                : String(format: "%.2f", remaining)
+            let unit = currency ?? valueUnit ?? ""
+            lines.append("remaining \(number) \(unit)".trimmingCharacters(in: .whitespaces))
+        }
+        if let resetText { lines.append(resetText) }
+        if let statusDetail { lines.append(statusDetail) }
+        return lines.joined(separator: "\n")
+    }
+
 }

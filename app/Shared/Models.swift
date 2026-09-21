@@ -58,7 +58,14 @@ extension TRRing {
         guard let usedValue, let totalValue else {
             return "\(fillPercent)% / 100%"
         }
-        return "\(formatValue(usedValue)) / \(formatValue(totalValue))"
+        return "\(formatValue(usedValue)) / \(formatValue(totalValue))" + usagePercentSuffix
+    }
+
+    /// Percent appended to "used / total" so credit quotas and prepaid balances
+    /// always surface a ratio, even when the detail line shows a reset countdown.
+    private var usagePercentSuffix: String {
+        guard let usedPercent, valueUnit != "percent" else { return "" }
+        return " · \(usedPercent)%"
     }
 
     private func formatValue(_ value: Double) -> String {
