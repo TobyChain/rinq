@@ -18,6 +18,10 @@ enum DaemonSetup {
     private static let markerRelativePath = ".rinq/libexec/rinq/.app-managed"
     private static let probeTimeout: TimeInterval = 1.5
     private static let postInstallWaitSeconds: Double = 8
+    /// Installer stdout/stderr land here so a failed bootstrap on a DMG-only
+    /// machine (missing python3, launchd refusal) is diagnosable; the app
+    /// itself only shows the normal not-connected state.
+    private static let installerLogRelative = "Library/Logs/rinq-app-install.log"
 
     static func ensureDaemon(port: Int) async {
         // Bare `swift run`/launchd-binary runs have no Info.plist version and
@@ -66,14 +70,42 @@ enum DaemonSetup {
             process.executableURL = URL(fileURLWithPath: "/bin/bash")
             process.arguments = [script.path, version, String(port)]
             process.environment = ProcessInfo.processInfo.environment
+            let log = Self.installerLogHandle()
+            if let log {
+                process.standardOutput = log
+                process.standardError = log
+            }
             do {
                 try process.run()
                 process.waitUntilExit()
+                if process.terminationStatus != 0 {
+                    Self.logInstallerNote(
+                        "install-daemon.sh exited \(process.terminationStatus)", log: log
+                    )
+                }
             } catch {
-                // A failed bootstrap leaves the app in its normal
-                // not-connected state; the next launch retries.
+                Self.logInstallerNote("could not launch installer: \(error)", log: log)
             }
         }.value
+    }
+
+    private static func installerLogHandle() -> FileHandle? {
+        let fm = FileManager.default
+        let url = fm.homeDirectoryForCurrentUser.appendingPathComponent(installerLogRelative)
+        if !fm.fileExists(atPath: url.path) {
+            try? fm.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            fm.createFile(atPath: url.path, contents: nil)
+        }
+        guard let handle = try? FileHandle(forWritingTo: url) else { return nil }
+        try? handle.seekToEnd()
+        return handle
+    }
+
+    private static func logInstallerNote(_ line: String, log: FileHandle?) {
+        let stamped = Data(
+            "[\(Int(Date().timeIntervalSince1970))] \(line)\n".utf8)
+        log?.write(stamped)
     }
 
     private static func waitForDaemon(onPort port: Int) async {

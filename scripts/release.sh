@@ -96,6 +96,7 @@ if [ -n "$NOTES_FILE" ]; then
 else
   RANGE="${LAST_TAG:+$LAST_TAG..}HEAD"
   CHANGELOG="$(git log --oneline "$RANGE" | sed 's/^/- /')"
+  DMG_NAME="$(basename "$DMG")"
   NOTES="## Highlights
 
 - **${SUMMARY}**
@@ -106,7 +107,7 @@ ${CHANGELOG}
 
 ## Install
 
-Download \`RinqMenu-${VERSION}-arm64.dmg\`, open it, and drag Rinq into
+Download \`${DMG_NAME}\`, open it, and drag Rinq into
 Applications. On first launch the app installs and starts the local daemon
 (needs python3) and shows quota rings once provider keys are configured in
 Settings. The app is ad-hoc signed: if Gatekeeper prompts on first launch,
