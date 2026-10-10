@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -161,7 +162,12 @@ def _get_json(
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
             return json.loads(resp.read().decode())
-    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, OSError):
+    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, OSError) as exc:
+        # Silent failures hide real causes (a long-lived daemon can lose its
+        # outbound network after sleep/wake and show only "quota unavailable"
+        # for hours). Log the URL and exception class; never the key or body.
+        print(f"collector fetch failed: {url}: {type(exc).__name__}: {exc}",
+              file=sys.stderr, flush=True)
         return None
 
 

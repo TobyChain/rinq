@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 import json
 import sqlite3
@@ -8,6 +9,7 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
+from contextlib import redirect_stderr
 from pathlib import Path
 
 os.environ["RINQ_HOME"] = tempfile.mkdtemp(prefix="rinq-test-")
@@ -101,6 +103,21 @@ class CollectorTests(unittest.TestCase):
             collectors._get_json = original
         self.assertEqual([ring["id"] for ring in rings], ["zhipu-status"])
         self.assertEqual(rings[0]["status"], "quota_unavailable")
+
+    def test_failed_fetch_logs_cause_without_key_material(self) -> None:
+        # A long-lived daemon once lost its outbound network after sleep/wake
+        # and showed "quota unavailable" for hours with nothing in the logs;
+        # fetch failures must log the URL and exception class (never the key).
+        buf = io.StringIO()
+        with redirect_stderr(buf):
+            data = collectors._get_json(
+                "http://127.0.0.1:1/none", "secret-key-that-must-not-leak"
+            )
+        self.assertIsNone(data)
+        out = buf.getvalue()
+        self.assertIn("collector fetch failed", out)
+        self.assertIn("127.0.0.1:1", out)
+        self.assertNotIn("secret-key-that-must-not-leak", out)
 
     def test_explicit_enable_adds_provider_missing_from_legacy_collector_list(self) -> None:
         cfg = {"collectors": ["codex"], "enabled": {"anthropic": True}, "ringOrder": []}
