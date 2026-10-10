@@ -7,8 +7,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from .state import clamp_pct
 from . import sources
@@ -614,39 +615,67 @@ def _status_ring(vendor: str, status: str) -> dict[str, Any]:
 
 
 def collect(cfg: dict) -> list[dict[str, Any]]:
-    rings: list[dict[str, Any]] = []
     enabled = cfg.get("enabled") or {}
     collector_names = list(cfg.get("collectors", ["mock"]))
     for name, is_enabled in enabled.items():
         if is_enabled is True and name in _COLLECTORS and name not in collector_names:
             collector_names.append(name)
-    for name in collector_names:
-        if enabled.get(name) is False:
-            continue
-        fn = _COLLECTORS.get(name)
-        if fn:
-            collected = [
-                ring for ring in fn(cfg)
-                if not (
-                    ring.get("status") == "unknown"
-                    and ring.get("usedPercent") is None
-                    and ring.get("remaining") is None
-                )
-            ]
+    jobs = [
+        (name, _COLLECTORS[name])
+        for name in collector_names
+        if enabled.get(name) is not False and name in _COLLECTORS
+    ]
+    # Providers are independent HTTPS endpoints; fetch them concurrently so
+    # one slow provider (up to the 20s fetch timeout) does not stretch a
+    # refresh by the sum of every provider's timeout.
+    workers = min(len(jobs), 8) or 1
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(
+            pool.map(lambda job: _run_collector(job[0], job[1], cfg), jobs)
+        )
+
+    rings: list[dict[str, Any]] = []
+    for (name, _fn), collected in zip(jobs, results):
+        if collected:
             rings.extend(collected)
-            # Explicitly enabled providers stay visible even when no live quota
-            # is available. The status item is not a percentage and does not
-            # participate in quota alerts.
-            if enabled.get(name) is True and not collected and name in _STATUS_META:
-                if not sources.has_vendor_credential(cfg, name):
-                    status = "not_connected"
-                elif name in _QUOTA_UNSUPPORTED_VENDORS:
-                    status = "quota_unsupported"
-                else:
-                    status = "quota_unavailable"
-                rings.append(_status_ring(name, status))
+        # Explicitly enabled providers stay visible even when no live quota
+        # is available (a failed or empty fetch included). The status item is
+        # not a percentage and does not participate in quota alerts.
+        elif enabled.get(name) is True and name in _STATUS_META:
+            if not sources.has_vendor_credential(cfg, name):
+                status = "not_connected"
+            elif name in _QUOTA_UNSUPPORTED_VENDORS:
+                status = "quota_unsupported"
+            else:
+                status = "quota_unavailable"
+            rings.append(_status_ring(name, status))
     # Hide rings for vendors the user explicitly turned off.
     rings = [r for r in rings if enabled.get(r.get("vendor"), True) is not False]
     from . import config as _config
     rings.sort(key=_config.ring_sort_key(cfg))
     return rings
+
+
+def _run_collector(
+    name: str,
+    fn: Callable[[dict], list[dict[str, Any]]],
+    cfg: dict,
+) -> list[dict[str, Any]]:
+    """Run one provider collector, isolating its failure to that provider.
+
+    A raising collector must not fail the whole /status response; the cause
+    is logged and the provider degrades to its unavailable status ring.
+    """
+    try:
+        return [
+            ring for ring in fn(cfg)
+            if not (
+                ring.get("status") == "unknown"
+                and ring.get("usedPercent") is None
+                and ring.get("remaining") is None
+            )
+        ]
+    except Exception as exc:  # noqa: BLE001 - isolation is the point
+        print(f"collector {name} failed: {type(exc).__name__}: {exc}",
+              file=sys.stderr, flush=True)
+        return []

@@ -104,6 +104,40 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual([ring["id"] for ring in rings], ["zhipu-status"])
         self.assertEqual(rings[0]["status"], "quota_unavailable")
 
+    def test_collector_exception_is_isolated_and_logged(self) -> None:
+        # One provider raising must not fail the whole status build: the
+        # remaining providers still report, the failed one degrades to its
+        # unavailable status ring, and the cause lands on stderr.
+        def boom(_cfg: dict) -> list:
+            raise RuntimeError("provider exploded")
+
+        cfg = {
+            "collectors": ["deepseek", "mock"],
+            "enabled": {"deepseek": True},
+            "keys": {"deepseek": "test-key"},
+            "ringOrder": [],
+        }
+        sentinel = collectors._COLLECTORS.get("deepseek")
+        collectors._COLLECTORS["deepseek"] = boom
+        try:
+            buf = io.StringIO()
+            with redirect_stderr(buf):
+                rings = collectors.collect(cfg)
+        finally:
+            if sentinel is None:
+                collectors._COLLECTORS.pop("deepseek", None)
+            else:
+                collectors._COLLECTORS["deepseek"] = sentinel
+        ids = [ring["id"] for ring in rings]
+        self.assertIn("deepseek-status", ids)
+        self.assertEqual(
+            rings[ids.index("deepseek-status")]["status"], "quota_unavailable"
+        )
+        self.assertIn("codex-5h", ids)  # a mock demo ring survived the failure
+        out = buf.getvalue()
+        self.assertIn("collector deepseek failed", out)
+        self.assertIn("RuntimeError", out)
+
     def test_failed_fetch_logs_cause_without_key_material(self) -> None:
         # A long-lived daemon once lost its outbound network after sleep/wake
         # and showed "quota unavailable" for hours with nothing in the logs;
