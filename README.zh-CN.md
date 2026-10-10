@@ -55,13 +55,19 @@ iPhone · iPad · Apple Watch ── 厂商 HTTPS 直连 ── 共享圆环视�
 
 ### 在 macOS 安装
 
+#### 通过 Release DMG 安装（无需克隆仓库）
+
+从 [Releases](https://github.com/TobyChain/rinq/releases) 下载 `RinqMenu-<版本>-arm64.dmg`，打开后把 Rinq 拖入 Applications。首次启动时应用会自动把 daemon 和 `rinq` CLI 安装到 `~/.rinq` 并注册 launchd 服务，无需其他步骤。DMG 为 ad-hoc 签名：首次启动若遇到 Gatekeeper 提示，右键点击应用选择"打开"即可。
+
+#### 通过仓库安装
+
 ```bash
 git clone https://github.com/TobyChain/rinq.git
 cd rinq
 ./install.sh
 ```
 
-安装脚本会把运行时代码复制到 `~/.rinq`，安装 `~/.local/bin/rinq`，构建原生菜单栏应用，并将 daemon 与菜单应用注册为 launchd 服务。点击菜单栏中的 Rinq 图标即可打开弹窗。
+安装脚本会把运行时代码复制到 `~/.rinq`，安装 `~/.local/bin/rinq`，构建原生菜单栏应用，并将 daemon 与菜单应用注册为 launchd 服务。仓库安装不会被 DMG 应用修改；若想让应用接管 daemon 管理，删除 `~/.rinq/libexec` 后重新启动应用即可。点击菜单栏中的 Rinq 图标即可打开弹窗。
 
 弹窗包含三个页面：
 

@@ -33,6 +33,7 @@ Rinq 是本地优先的 AI 配额和本地编码 Agent 用量监视器。它把�
 - `schema/status.md`：跨进程、跨界面的公开 JSON 契约。
 - `hooks/`：TraeX 和 Codex 通知接入示例。
 - `install.sh`、`mac/com.rinq.menu.plist`：本地安装和 launchd 部署。
+- `scripts/`：发布与打包工具链。`build-dmg.sh` 组装 `RinqMenu.app`（内嵌 daemon runtime 与 `install-daemon.sh`）并产出 DMG；`release.sh` 是唯一发布入口（测试 → bump → DMG → commit → tag → push → GitHub Release）；`make-icon.swift` 重新生成应用图标。发布流程见 `docs/cookbook/release.md`。
 - `mac/test_rinq.py`、`mac/RinqMenu/Tests/`：Python 和 macOS Swift 的现有测试入口。
 
 ## 模块 Seam
@@ -134,6 +135,9 @@ make mac-test
 cd mac/RinqMenu
 swift test
 swift build -c release
+
+# 构建 DMG（产物在 dist/，已被 gitignore）
+make dist
 
 # 仅在对应 Apple 目标受影响且本机有 Xcode/XcodeGen 时
 make ios-build

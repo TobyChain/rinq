@@ -1,4 +1,4 @@
-.PHONY: ios-generate ios-build ios-sim watch-generate watch-build mac-test install
+.PHONY: ios-generate ios-build ios-sim watch-generate watch-build mac-test dist install
 
 # ---- iOS app + home/lock-screen widget (standalone, no Mac) -------------
 ios-generate:
@@ -32,6 +32,10 @@ watch-build: watch-generate
 # ---- Mac collector (optional local relay/daemon) -------------------------
 mac-test:
 	cd mac && python3 -m unittest test_rinq -v
+
+# ---- Distribution ---------------------------------------------------------
+dist:
+	./scripts/build-dmg.sh
 
 install:
 	./install.sh

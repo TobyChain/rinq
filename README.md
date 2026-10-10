@@ -56,13 +56,19 @@ Local token usage and provider quota remain separate. Rinq can show local agent 
 
 ### Install on macOS
 
+#### From a release DMG (no checkout needed)
+
+Download `RinqMenu-<version>-arm64.dmg` from [Releases](https://github.com/TobyChain/rinq/releases), open it, and drag Rinq into Applications. On first launch the app installs the daemon and `rinq` CLI into `~/.rinq` and registers the launchd agent, so no extra setup is needed. The DMG is ad-hoc signed: if Gatekeeper prompts on first launch, right-click the app and choose Open.
+
+#### From a checkout
+
 ```bash
 git clone https://github.com/TobyChain/rinq.git
 cd rinq
 ./install.sh
 ```
 
-The installer copies the runtime to `~/.rinq`, installs `~/.local/bin/rinq`, builds the native menu-bar app, and registers both the daemon and menu app with launchd. Click the Rinq menu-bar icon to open the popover.
+The installer copies the runtime to `~/.rinq`, installs `~/.local/bin/rinq`, builds the native menu-bar app, and registers both the daemon and menu app with launchd. A checkout install is never modified by the DMG app; to hand daemon management over to the app, remove `~/.rinq/libexec` and relaunch the app. Click the Rinq menu-bar icon to open the popover.
 
 The popover contains:
 

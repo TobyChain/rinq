@@ -45,6 +45,9 @@ final class AppDelegate: NSResponder, NSApplicationDelegate, NSPopoverDelegate {
             }
         }
         Task {
+            // DMG installs bootstrap an app-managed daemon before the first
+            // refresh; repo installs keep their launchd daemon untouched.
+            await DaemonSetup.ensureDaemon(port: store.port)
             let shouldPresent = await store.refresh()
             render(rings: store.status?.rings ?? [], alerts: store.alerts)
             if shouldPresent { presentAlertPopover() }
