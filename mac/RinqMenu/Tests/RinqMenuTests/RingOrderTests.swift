@@ -133,6 +133,22 @@ final class PopoverLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(layout.height, PopoverLayout.footerHeight)
         XCTAssertLessThanOrEqual(layout.height + 28, 450)
     }
+
+    func testSparseWindowKeepsMinimumHeight() {
+        let size = CGSize(width: 1440, height: 900)
+        // A single status-only source renders no ring visualization; without a
+        // floor the window collapses to a stub shorter than a one-ring
+        // dashboard. The minimum keeps the sparse window as tall as the
+        // one-ring presentation.
+        let sparse = PopoverLayout.make(
+            ringCount: 1, visibleScreenSize: size, showsRingVisualization: false
+        )
+        let oneRing = PopoverLayout.make(
+            ringCount: 1, visibleScreenSize: size, showsRingVisualization: true
+        )
+        XCTAssertEqual(sparse.height, oneRing.height)
+        XCTAssertGreaterThanOrEqual(sparse.height, 300)
+    }
 }
 
 final class MenuBarLayoutTests: XCTestCase {

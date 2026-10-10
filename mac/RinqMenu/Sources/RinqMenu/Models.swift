@@ -203,13 +203,18 @@ struct PopoverLayout: Equatable {
         let availableRing = maxHeight - fixedHeight - CGFloat(rowCount) * rowHeight
         let ringDiameter = showsRingVisualization ? min(preferredRing, max(64, availableRing)) : 0
         let desiredHeight = fixedHeight + ringDiameter + CGFloat(rowCount) * rowHeight
+        // A window without quota rings (a single unavailable source, or the
+        // empty state) otherwise collapses to a 166pt stub. Keep at least the
+        // height of a one-ring presentation so the popover always reads as a
+        // dashboard.
+        let minimumHeight = fixedHeight + rowHeight + 150
 
         return PopoverLayout(
             width: width,
-            height: min(desiredHeight, maxHeight),
+            height: min(max(desiredHeight, minimumHeight), maxHeight),
             columns: columns,
             ringDiameter: ringDiameter,
-            scrolls: desiredHeight > maxHeight,
+            scrolls: max(desiredHeight, minimumHeight) > maxHeight,
             reservesAlertSpace: hasAlerts
         )
     }

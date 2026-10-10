@@ -9,7 +9,14 @@ struct DashboardView: View {
             if layout.scrolls {
                 ScrollView { content }
             } else {
-                content
+                // Center the dashboard vertically inside the popover's
+                // minimum height so a sparse window (a single source, or the
+                // empty state) reads as a quiet dashboard, not a stub.
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    content
+                    Spacer(minLength: 0)
+                }
             }
         }
     }
