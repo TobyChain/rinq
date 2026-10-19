@@ -12,7 +12,7 @@ CONFIG_PATH = HOME / "config.json"
 DEFAULT_PORT = 7788
 
 # Vendor ids the app knows about, in default display order. The user reorders
-# and toggles these in the Settings UI; vendors with no credential and no
+# in the Settings UI; vendors with no credential and no
 # ChatGPT login are hidden automatically.
 VENDOR_IDS = ["codex", "minimax", "deepseek", "openai", "anthropic", "moonshot", "zhipu", "xiaomi", "jina"]
 
@@ -26,9 +26,6 @@ DEFAULT_CONFIG = {
     # local file (chmod 600); they are sent only to the matching vendor and are
     # never sent to the browser (the /config endpoint masks them).
     "keys": {},
-    # Explicitly enabled vendors. When null/empty, a vendor shows up only when
-    # it has a usable credential/auto-discovery. Set false to hide even then.
-    "enabled": {},
     # Order ring ids are displayed (rings, bars, and the dashboard). Anything
     # not listed follows in default order.
     "ringOrder": ["codex-5h", "codex-week", "minimax-5h", "minimax-week",

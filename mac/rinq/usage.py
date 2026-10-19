@@ -13,7 +13,7 @@ import threading
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from .config import HOME, ensure_dirs, load_config
 
@@ -39,19 +39,21 @@ def discover_sources(extra_sources: list[dict[str, str]] | None = None) -> list[
     claude_home = _env_path("CLAUDE_CONFIG_DIR", home / ".claude")
     zcode_home = _env_path("ZCODE_HOME", home / ".zcode")
     omp_agent_home = _env_path("PI_CODING_AGENT_DIR", home / ".omp" / "agent")
+    pi_agent_home = _env_path("PI_AGENT_DIR", home / ".pi" / "agent")
     candidates = [
         UsageSource("codex", codex_home / "sessions"),
         UsageSource("traex", traecli_home / "sessions"),
         UsageSource("claude_code", claude_home / "projects"),
         UsageSource("zcode", zcode_home / "cli" / "log"),
         UsageSource("omp", omp_agent_home / "sessions"),
+        UsageSource("pi", pi_agent_home / "sessions"),
     ]
     for extra in extra_sources or []:
         if not isinstance(extra, dict):
             continue
         adapter = extra.get("adapter", "")
         path = extra.get("path", "")
-        if adapter in {"codex", "traex", "claude_code", "zcode", "omp"} and path:
+        if adapter in {"codex", "traex", "claude_code", "zcode", "omp", "pi"} and path:
             candidates.append(UsageSource(adapter, Path(path).expanduser()))
     seen = set()
     result = []
@@ -221,22 +223,26 @@ def _token_event(
         usage = context.get("usage") if isinstance(context, dict) else None
         model = context.get("modelId") or context.get("model") or model
         provider = context.get("providerId") or provider
-    elif adapter == "omp" and b'"usage"' in line and b'"assistant"' in line:
+    elif adapter in {"omp", "pi"} and b'"usage"' in line:
         obj = _json(line)
         message = obj.get("message", {}) if obj else {}
         entry_id = obj.get("id") if obj else None
         if (
             obj and obj.get("type") == "message"
             and isinstance(message, dict) and message.get("role") == "assistant"
-            and isinstance(entry_id, str) and entry_id
         ):
             usage = message.get("usage")
             message_model = message.get("model")
             message_provider = message.get("provider")
             model = message_model if isinstance(message_model, str) and message_model else model
             provider = message_provider if isinstance(message_provider, str) and message_provider else provider
-            event_key = f"omp:{entry_id}:{obj.get('timestamp', '')}"
             timestamp_value = message.get("timestamp")
+            if adapter == "omp":
+                if not isinstance(entry_id, str) or not entry_id:
+                    return None
+                event_key = f"omp:{entry_id}:{obj.get('timestamp', '')}"
+            elif isinstance(entry_id, str) and entry_id:
+                event_key = f"pi:{entry_id}:{obj.get('timestamp', '')}"
     elif adapter in {"codex", "traex"} and b"token_count" in line:
         obj = _json(line)
         payload = obj.get("payload", {}) if obj else {}
@@ -284,8 +290,6 @@ def _usage_number(usage: dict[str, Any], *names: str) -> int:
         except (TypeError, ValueError, OverflowError):
             continue
     return 0
-
-
 def _json(line: bytes) -> dict[str, Any] | None:
     """Decode an external JSONL line, returning None for malformed input."""
     try:
@@ -312,7 +316,7 @@ def _default_app(adapter: str) -> str:
     """Return the default product label for a log adapter."""
     return {
         "codex": "Codex CLI", "traex": "TraeX", "claude_code": "Claude Code",
-        "zcode": "ZCode", "omp": "OMP",
+        "zcode": "ZCode", "omp": "OMP", "pi": "Pi",
     }[adapter]
 
 
@@ -325,6 +329,8 @@ def _session_identity(adapter: str, payload: dict[str, Any]) -> tuple[str, str |
         return "Claude Code", provider or "anthropic"
     if adapter == "zcode":
         return "ZCode", provider or "zai"
+    if adapter == "pi":
+        return "Pi", provider
     originator = str(payload.get("originator", "")).lower()
     source = payload.get("source")
     if "desktop" in originator:

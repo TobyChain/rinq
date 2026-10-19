@@ -23,12 +23,13 @@ Rinq has two independent data paths:
 
 | Area | What changes |
 |---|---|
-| **Quota rings** | Provider windows, spend, and balances use a common `used / total` presentation |
+| **Quota rings** | Provider windows, spend, and balances use a common `used / total` presentation; each provider is a row with its own ring on the right |
+| **Agent sessions** | Running / subagents running / waiting / idle state of local Claude Code, Codex, TraeX, OMP, and Pi sessions in an expanded session panel |
 | **Actionable alerts** | Exhausted, low, or rapidly consumed quota is highlighted; clicking the alert dismisses it until that condition clears |
 | **Local usage** | Daily and rolling-week input/output tokens are aggregated without storing prompts or responses |
 | **Daily inspection** | Hovering a day shows its input and output counts in one-decimal K/M/B units |
 | **Apple surfaces** | macOS menu bar, iPhone, iPad, Apple Watch, iOS widget, and watchOS complication share the same ring model |
-| **Provider controls** | Credentials, vendor visibility, reference totals, and ring order are managed locally |
+| **Provider controls** | Credentials, connection state, reference totals, and ring order are managed locally |
 | **IDE integrations** | Detect installed/running coding IDEs, local account state, and structured local usage |
 
 ## How It Works
@@ -74,7 +75,7 @@ The popover contains:
 
 - **Rings:** configured quotas, reset windows, and dismissible alerts.
 - **Usage:** today, rolling week, per-day input/output, and per-app totals.
-- **Providers:** local credentials, vendor toggles, and drag-to-reorder.
+- **Providers:** local credentials, automatic activation, and drag-to-reorder.
 
 A footer at the bottom of the popover has a **Quit Rinq** button that stops the
 menu-bar app. The popover closes itself after 10 seconds without interaction;
@@ -88,7 +89,7 @@ git pull --ff-only
 ./install.sh
 ```
 
-The daemon listens on `127.0.0.1:7788` by default. Useful local endpoints are `/status`, `/usage`, and `/config`.
+The daemon listens on `127.0.0.1:7788` by default. Useful local endpoints are `/status`, `/sessions`, `/usage`, and `/config`.
 
 ## Provider Quotas
 
@@ -104,7 +105,7 @@ The daemon listens on `127.0.0.1:7788` by default. Useful local endpoints are `/
 | Xiaomi MiMo | Not supported yet | API key |
 | Claude API | Not supported yet | Admin API key |
 
-Providers without a usable credential are hidden. Balance rings use the configured `balanceFull` value as their reference total. GLM coding-plan keys show rolling 5-hour and weekly request windows; pay-as-you-go keys fall back to a prepaid balance. Jina reports its shared Embeddings/Reranker/Reader/Search token pool; its dashboard host is `hosts.jina` / `JINA_DASHBOARD_HOST` (default `embeddings-dashboard-api.jinaai.cn`, use `embeddings-dashboard-api.jina.ai` for the international host). Xiaomi MiMo and Claude API have no implemented live-quota route yet and show an explicit "Not supported" card when enabled. ChatGPT/Codex relies on an unofficial subscription endpoint and is intended for self-built or sideloaded apps, not App Store distribution.
+Saving an API key or detecting a supported account activates the provider automatically; there is no separate activation switch. Providers without a usable credential are hidden. Balance rings use the configured `balanceFull` value as their reference total. GLM coding-plan keys show rolling 5-hour and weekly request windows; pay-as-you-go keys fall back to a prepaid balance. Jina reports its shared Embeddings/Reranker/Reader/Search token pool; its dashboard host is `hosts.jina` / `JINA_DASHBOARD_HOST` (default `embeddings-dashboard-api.jinaai.cn`, use `embeddings-dashboard-api.jina.ai` for the international host). Xiaomi MiMo and Claude API have no implemented live-quota route yet and show an explicit "Not supported" card when a credential is present. ChatGPT/Codex relies on an unofficial subscription endpoint and is intended for self-built or sideloaded apps, not App Store distribution.
 
 ## Local Token Usage
 
@@ -116,8 +117,23 @@ Default locations:
 - TraeX: `~/.trae/cli/sessions`
 - Claude Code: `~/.claude/projects`
 - OMP / oh-my-pi: `~/.omp/agent/sessions`
+- Pi: `~/.pi/agent/sessions`
 
-Rinq honors `CODEX_HOME`, `TRAE_HOME`, `TRAECLI_HOME`, `CLAUDE_CONFIG_DIR`, `ZCODE_HOME`, and OMP's `PI_CODING_AGENT_DIR`. Use `usage.extraSources` when a supported agent stores JSONL logs elsewhere. The incremental index lives at `~/.rinq/usage.sqlite3`; the default lookback is seven days.
+Rinq honors `CODEX_HOME`, `TRAE_HOME`, `TRAECLI_HOME`, `CLAUDE_CONFIG_DIR`, `ZCODE_HOME`, OMP's `PI_CODING_AGENT_DIR`, and Pi's `PI_AGENT_DIR`. Use `usage.extraSources` when a supported agent stores JSONL logs elsewhere. The incremental index lives at `~/.rinq/usage.sqlite3`; the default lookback is seven days.
+
+## Live Agent Sessions
+
+The Rings tab and the web dashboard show open terminal-agent sessions from Claude Code, Codex, TraeX, OMP, and Pi. Sessions are grouped by CLI and ordered as running, subagents running, waiting, and idling; each row includes project, model, working path, latest summary, and update time. Closed sessions disappear after `SessionEnd`; without a close hook, idle/waiting activity remains visible for up to ten minutes, with a fifteen-minute grace period for running shell commands and subagents. Visibility is inferred from logs rather than terminal-process inspection. The snapshot is served at `GET /sessions` and rebuilt in memory from transcript tails; Rinq never persists prompt or assistant text (see [the schema contract](schema/status.md#local-agent-sessions)).
+
+State is inferred from transcript activity (open tool calls, turn completion, errors) with short grace windows, so it works without any client configuration. Claude Code and TraeX notification hooks report waiting directly. Codex notify reports turn completion; its other states use transcript inference:
+
+| Agent | Hook file | Install location |
+|---|---|---|
+| Claude Code | [hooks/claude.settings.snippet.json](hooks/claude.settings.snippet.json) | merge into `~/.claude/settings.json` |
+| Codex CLI | [hooks/codex.notify.toml.snippet](hooks/codex.notify.toml.snippet) | add the `notify` line to `~/.codex/config.toml` |
+| TraeX | [hooks/traex.hooks.json](hooks/traex.hooks.json) | TraeX hooks configuration |
+
+Hooks POST to the local daemon only. Only lifecycle state and safe metadata are persisted; prompt, reply, title and detail text are excluded. Hooks overlay log-derived state for a few minutes, and `SessionEnd` removes the session from the open list. The native popover and web panel refresh sessions independently every two seconds; log scans are cached for five seconds and hooks invalidate that cache. You can also record an event manually with `rinq push --state waiting --title "review needed" --session-id claude:abc --cwd ~/code/x`.
 
 The macOS Providers tab also detects installed and running coding IDEs such as ZCode, MiMo Code/Desktop, and Trae CN. It reports the IDE's non-secret login/entitlement state and can open the vendor's official account connection page. Rinq never asks for a vendor password, reads browser cookies, or copies encrypted client credentials into `~/.rinq/config.json`.
 

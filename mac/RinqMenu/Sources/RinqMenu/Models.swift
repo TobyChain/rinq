@@ -38,6 +38,41 @@ struct Status: Codable {
     let updatedAt: Int?
 }
 
+struct AgentSession: Codable, Identifiable, Hashable {
+    let id: String
+    let app: String
+    let adapter: String?
+    let project: String?
+    let cwd: String?
+    let model: String?
+    let provider: String?
+    let state: String
+    let isOpen: Bool?
+    let subagentCount: Int?
+    let summary: String?
+    let startedAt: Int?
+    let updatedAt: Int?
+    let source: String?
+}
+
+struct SessionCounts: Codable, Hashable {
+    let running: Int
+    let subagentsRunning: Int?
+    let waiting: Int
+    let idle: Int?
+    let active: Int?
+    let open: Int?
+    let doneToday: Int?
+    let failedToday: Int?
+}
+
+struct SessionSnapshot: Codable {
+    let version: Int?
+    let updatedAt: Int?
+    let sessions: [AgentSession]
+    let counts: SessionCounts?
+}
+
 struct VendorInfo: Codable, Identifiable, Hashable {
     let id: String
     let label: String
@@ -162,24 +197,32 @@ struct PopoverLayout: Equatable {
     static let alertSlotHeight: CGFloat = 54
     static let alertBannerHeight: CGFloat = 44
     static let footerHeight: CGFloat = 34
+    // Provider rows replace the former concentric-ring visualization: each
+    // ring is drawn at the trailing edge of its own row.
+    static let providerRowHeight: CGFloat = 50
+    static let agentHeaderHeight: CGFloat = 42
+    static let agentSessionRowHeight: CGFloat = 72
+    static let maxAgentRows = 5
+    static let emptyRowsHeight: CGFloat = 72
 
     let width: CGFloat
     let height: CGFloat
-    let columns: Int
-    let ringDiameter: CGFloat
     let scrolls: Bool
     let reservesAlertSpace: Bool
 
     static func make(
         rings: [Ring],
         visibleScreenSize: CGSize,
-        hasAlerts: Bool = false
+        hasAlerts: Bool = false,
+        showsAgentStrip: Bool = false,
+        agentSessionCount: Int = 0
     ) -> PopoverLayout {
         make(
             ringCount: rings.count,
             visibleScreenSize: visibleScreenSize,
             hasAlerts: hasAlerts,
-            showsRingVisualization: !RingPresentation.quotaRings(rings).isEmpty
+            showsAgentStrip: showsAgentStrip,
+            agentSessionCount: agentSessionCount
         )
     }
 
@@ -187,34 +230,32 @@ struct PopoverLayout: Equatable {
         ringCount: Int,
         visibleScreenSize: CGSize,
         hasAlerts: Bool = false,
-        showsRingVisualization: Bool = true
+        showsAgentStrip: Bool = false,
+        agentSessionCount: Int = 0
     ) -> PopoverLayout {
-        let count = max(ringCount, 0)
-        let columns = count >= 6 ? 2 : 1
-        let width = min(columns == 2 ? 620 : 380, max(320, visibleScreenSize.width - 32))
-        // NSPopover adds roughly 26 pt for its arrow and outer frame; reserve
-        // 28 pt so the complete popup (not just SwiftUI content) stays within
-        // half of the current screen's visible height.
-        let maxHeight = max(1, floor(visibleScreenSize.height * 0.5) - 28)
-        let rowCount = max(1, Int(ceil(Double(max(count, 1)) / Double(columns))))
-        let fixedHeight: CGFloat = 88 + footerHeight + (hasAlerts ? alertSlotHeight : 0)
-        let rowHeight: CGFloat = 44
-        let preferredRing: CGFloat = count <= 3 ? 150 : (count <= 5 ? 110 : 118)
-        let availableRing = maxHeight - fixedHeight - CGFloat(rowCount) * rowHeight
-        let ringDiameter = showsRingVisualization ? min(preferredRing, max(64, availableRing)) : 0
-        let desiredHeight = fixedHeight + ringDiameter + CGFloat(rowCount) * rowHeight
-        // A window without quota rings (a single unavailable source, or the
-        // empty state) otherwise collapses to a 166pt stub. Keep at least the
-        // height of a one-ring presentation so the popover always reads as a
-        // dashboard.
-        let minimumHeight = fixedHeight + rowHeight + 150
+        let width = min(480, max(360, visibleScreenSize.width - 32))
+        // NSPopover adds roughly 28 pt for its arrow and outer frame; reserve
+        // it so the expanded popup remains inside the visible screen.
+        let maxHeight = max(1, floor(visibleScreenSize.height * 0.62) - 28)
+        let visibleAgentRows = min(max(agentSessionCount, showsAgentStrip ? 1 : 0), maxAgentRows)
+        let agentHeight = visibleAgentRows > 0
+            ? agentHeaderHeight + CGFloat(visibleAgentRows) * agentSessionRowHeight + 8
+            : 0
+        let chrome: CGFloat = 98
+            + footerHeight
+            + (hasAlerts ? alertSlotHeight : 0)
+            + agentHeight
+        let rowsHeight = ringCount > 0
+            ? CGFloat(ringCount) * providerRowHeight
+            : emptyRowsHeight
+        // Preserve the v0.1.8 minimum dashboard height for sparse sources.
+        let minimumHeight: CGFloat = 316 + (hasAlerts ? alertSlotHeight : 0)
+        let desiredHeight = max(chrome + rowsHeight, minimumHeight)
 
         return PopoverLayout(
             width: width,
-            height: min(max(desiredHeight, minimumHeight), maxHeight),
-            columns: columns,
-            ringDiameter: ringDiameter,
-            scrolls: max(desiredHeight, minimumHeight) > maxHeight,
+            height: min(desiredHeight, maxHeight),
+            scrolls: desiredHeight > maxHeight,
             reservesAlertSpace: hasAlerts
         )
     }
@@ -285,24 +326,25 @@ extension Ring {
     var fillPercent: Int { usedPercent ?? 0 }
     var hasQuotaValue: Bool { usedPercent != nil }
 
-    var usageText: String {
+    /// Compact "used / total" text shown beside the per-row ring. The ring
+    /// itself carries the normalized percentage.
+    var valueText: String {
         if status == "not_connected" { return "Not connected" }
         if status == "quota_unavailable" { return "Unavailable" }
         if status == "quota_unsupported" { return "Not supported" }
         guard let usedValue, let totalValue else {
             return "Quota unavailable"
         }
-        return "\(formatValue(usedValue)) / \(formatValue(totalValue))" + usagePercentSuffix
+        return "\(formatValue(usedValue)) / \(formatValue(totalValue))"
     }
 
-    /// Percent appended to "used / total" so credit quotas and prepaid balances
-    /// always surface a ratio, even when the detail line shows a reset countdown.
-    private var usagePercentSuffix: String {
-        guard let usedPercent, valueUnit != "percent" else { return "" }
-        return " · \(usedPercent)%"
+    /// Label drawn inside the trailing ring.
+    var ringCenterText: String {
+        guard let usedPercent else { return "–" }
+        return "\(usedPercent)%"
     }
 
-    private func formatValue(_ value: Double) -> String {
+    func formatValue(_ value: Double) -> String {
         if valueUnit == "tokens" {
             return formatHoverTokenCount(Int(value.rounded()))
         }
@@ -330,7 +372,7 @@ extension Ring {
 
     /// Multi-line tooltip shown when hovering a ring arc or bar row.
     var hoverText: String {
-        var lines = [label, usageText]
+        var lines = [label, valueText]
         if let usedPercent { lines.append("\(usedPercent)% used") }
         if let remaining {
             let number = remaining.rounded() == remaining

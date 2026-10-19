@@ -24,14 +24,14 @@ Rinq 是本地优先的 AI 配额和本地编码 Agent 用量监视器。它把�
 
 ## 当前代码地图
 
-- `mac/rinq/`：Python daemon、CLI、HTTP API、配置、状态、提供商采集、本地用量索引、IDE 集成、事件和 push。
-- `mac/RinqMenu/`：macOS 13+ SwiftUI 菜单栏客户端。`Store.swift` 是 daemon API 与 UI 状态的边界，`AppMain.swift` 驱动 30 秒刷新和菜单栏渲染，`QuotaAlerts.swift` 负责配额告警状态。
+- `mac/rinq/`：Python daemon、CLI、HTTP API、配置、状态、提供商采集、本地用量索引、IDE 集成、事件、push 和终端 Agent 会话扫描（`sessions.py`）。
+- `mac/RinqMenu/`：macOS 13+ SwiftUI 菜单栏客户端。`Store.swift` 是 daemon API 与 UI 状态的边界，`AppMain.swift` 驱动 30 秒刷新和菜单栏渲染，`QuotaAlerts.swift` 负责配额告警状态，`AgentSessionsView.swift` 渲染终端 Agent 状态条。
 - `app/Shared/`：iOS/watchOS 共用模型、视图、设置和直接提供商采集。
 - `app/iOS/`、`app/Watch/`：应用入口。
 - `app/iOSWidget/`、`app/WatchWidget/`：Widget 和 Complication。
 - `app/project.yml`：Apple 多目标工程的权威配置；`app/Rinq.xcodeproj/` 是生成物并被忽略。
 - `schema/status.md`：跨进程、跨界面的公开 JSON 契约。
-- `hooks/`：TraeX 和 Codex 通知接入示例。
+- `hooks/`：Claude Code、Codex 和 TraeX 通知接入示例。
 - `install.sh`、`mac/com.rinq.menu.plist`：本地安装和 launchd 部署。
 - `scripts/`：发布与打包工具链。`build-dmg.sh` 组装 `RinqMenu.app`（内嵌 daemon runtime 与 `install-daemon.sh`）并产出 DMG；`release.sh` 是唯一发布入口（测试 → bump → DMG → commit → tag → push → GitHub Release）；`make-icon.swift` 重新生成应用图标。发布流程见 `docs/cookbook/release.md`。
 - `mac/test_rinq.py`、`mac/RinqMenu/Tests/`：Python 和 macOS Swift 的现有测试入口。
@@ -43,11 +43,12 @@ Rinq 是本地优先的 AI 配额和本地编码 Agent 用量监视器。它把�
 | Seam | Provider / 生产者 | Consumer / 消费者 | 稳定边界 |
 | --- | --- | --- | --- |
 | 配额采集 | `mac/rinq/collectors.py`；移动端 `app/Shared/Providers.swift` | `/status`、macOS UI、Apple UI | ring 字段和不可用状态 |
-| daemon HTTP API | `mac/rinq/server.py` | `mac/RinqMenu/.../Store.swift`、CLI、本地 dashboard | `/status`、`/usage`、`/config`、`/integrations`、`/event`、`/auth/connect` |
+| daemon HTTP API | `mac/rinq/server.py` | `mac/RinqMenu/.../Store.swift`、CLI、本地 dashboard | `/status`、`/sessions`、`/usage`、`/config`、`/integrations`、`/event`、`/auth/connect` |
 | 配置 | `mac/rinq/config.py`、`settings_api.py` | collectors、server、macOS Settings | 公共配置不得回传明文密钥 |
 | 本地用量采集 | `mac/rinq/usage.py` 的 source adapter 和增量 SQLite 索引 | `/usage`、macOS Usage UI | 只持久化计数和来源元数据 |
+| 本地 Agent 会话 | `mac/rinq/sessions.py` 从 JSONL 尾部重建状态；`events.py` 写入 hook 覆盖和关闭 tombstone | `/sessions`、`/status.agents`、Rings 会话面板、网页 dashboard | 只显示 `isOpen` 会话，state 排序为 `running/subagents_running/waiting/idle`；会话文本只在内存中返回一行摘要，不持久化 |
 | 本地 IDE 集成 | `mac/rinq/integrations.py` | `/config`/`/integrations`、Settings UI | 安装、认证、套餐、实时配额是不同能力状态 |
-| Agent 事件 | CLI/hook -> `events.py` -> `state.py` | `/status`、dashboard、push | `started/completed/failed/waiting` |
+| Agent 事件 | CLI/hook -> `events.py` -> `state.py` | `/status`、`/sessions`、dashboard、push | `started/completed/failed/waiting`；带 `sessionId` 时同时覆盖会话状态 |
 | Apple 共享模型 | `app/Shared/Models.swift` 和 Provider 输出 | iOS、watchOS、Widget | 与 `schema/status.md` 的 ring 语义一致 |
 
 新增提供商或字段时，不要只修改一个 UI。至少检查 Python collector、移动端直连实现、两套 Swift model、`schema/status.md`、设置界面和相应测试是否需要同步。某个平台明确不支持时，应把差异写入当前态文档，不要制造虚假的对称实现。
@@ -57,14 +58,22 @@ Rinq 是本地优先的 AI 配额和本地编码 Agent 用量监视器。它把�
 ### macOS 配额与界面循环
 
 1. `AppMain.swift` 启动后和每 30 秒调用 `Store.refresh()`。
-2. `Store` 并行读取 `/status`、`/config` 和 `/usage`。
-3. daemon 的 `build_status()` 加载配置和状态，调用 collector，生成统一 rings，并原子写回状态。
+2. `Store` 并行读取 `/status`、`/sessions`、`/config` 和 `/usage`；会话快照独立发布。popover 打开时每 2 秒单独刷新 `/sessions`，关闭时取消任务。
+3. daemon 的 `build_status()` 加载配置和状态，最多 8 路并发采集已连接的提供商，隔离单个提供商失败，生成统一 rings 并原子写回状态。
 4. `QuotaAlertMonitor` 根据当前 ring 和持久化采样计算告警。
-5. 菜单栏绘制紧凑横条；popover 展示 rings、usage 和 settings。新告警可以自动打开 popover。popover 打开后由空闲计时器在 10 秒无交互时自动收起（活动告警期间除外）。
+5. 菜单栏绘制紧凑横条；popover 的 Rings 标签页由 provider 横栏组成（每行左侧名称和用量、右侧独立小环与百分比），顶部在有近期会话时显示终端 Agent 状态条。新告警可以自动打开 popover。popover 打开后由空闲计时器在 10 秒无交互时自动收起（活动告警期间除外）。
+
+### 本地会话一览循环
+
+1. `sessions.py` 扫描 Claude Code、Codex、TraeX、OMP、Pi 的 JSONL 尾部（最近 24 小时内最新的 40 个候选，每个读取最后 96KB 和最多 80 条尾部记录）。
+2. 依据未闭合工具调用（shell 15 分钟、其他 120 秒宽限）、回合结束和错误推断 state，并生成单行摘要。
+3. `POST /event` 携带 `sessionId` 时写入 `state.agentSessions`；`closed` 写入轻量 tombstone，读取期过滤已关闭日志。
+4. `/sessions` 返回快照（5 秒缓存），只返回最多 12 条打开会话；`build_status()` 用其 running/waiting 计数覆盖 `/status.agents`。
+5. prompt 和助手文本只在内存中重建，不写入磁盘、SQLite 或状态文件。
 
 ### 本地用量索引循环
 
-1. `usage.py` 发现 Codex、TraeX、Claude Code、ZCode、OMP 及显式追加的日志源。
+1. `usage.py` 发现 Codex、TraeX、Claude Code、ZCode、OMP、Pi 及显式追加的日志源。
 2. SQLite 保存文件 inode、读取 offset 和结构化 token 事件。
 3. 刷新时只继续扫描新增的完整 JSONL 行；文件轮换或截断时重建该文件的索引。
 4. `/usage` 从索引派生今日、滚动周、逐日和逐应用汇总。
@@ -78,17 +87,19 @@ Rinq 是本地优先的 AI 配额和本地编码 Agent 用量监视器。它把�
 
 ## 不可破坏的产品和安全约束
 
+- macOS 提供商凭据存在即自动激活，Providers 不显示闪电或独立启用开关；`/config` 的 `enabled` 是 `hasCredential` 的兼容响应字段，旧 `enabled` 配置和写入不再控制采集。显式 `collectors: ["mock"]` 保持离线演示。
 - 配额的持久契约是 `usedValue`、`totalValue`、`valueUnit`；`usedPercent` 只用于归一化渲染，不能替代原始数值。
 - 未认证、无稳定接口或无法解析真实配额时，显示明确的灰色 `Not connected`、`Unavailable` 或 `unknown` 状态。不得伪装成 0% 使用量，也不得从套餐价格、授权上限、网页文案或浏览器 cookie 推断实时余额。
 - daemon 默认绑定 `127.0.0.1:7788`。配置写入和认证动作只允许 loopback 客户端。若改为 `0.0.0.0`，必须明确说明局域网暴露和无认证风险。
 - API key、session credential、`~/.rinq/config.json`、`~/.rinq/usage.sqlite3` 和导出的本地数据库不得提交。公共配置响应不得泄露密钥。
 - 本地用量采集只读取结构化计数和必要的来源元数据；不得保存 prompt、response、工具参数、工具输出或浏览器会话。
+- 终端 Agent 会话扫描只返回状态和一行摘要；会话文本只在请求时于内存中重建，不写入状态文件、SQLite 或任何磁盘缓存。hook 记录只持久化 state/app/cwd/model/subagentCount 和时间；title/detail 及 prompt/回复文本不落盘。
 - OMP 默认从 `~/.omp/agent/sessions` 递归采集主会话和子 Agent 的 assistant usage；尊重 `PI_CODING_AGENT_DIR`，并按稳定 message ID 去重 fork 复制的消息。
 - macOS 部署目标是 13。不要无意中引入 macOS 14+ API。
 - 告警是用户可见契约。当前快速消耗规则使用 25–45 分钟样本且增量大于 20 个百分点；5 小时窗口剩余量低于 30%、周窗口剩余量低于 10% 时告警；耗尽为 critical。修改阈值前必须同步测试和当前态文档。
 - macOS popover 有活动告警时，点击窗口内任意区域即视为确认并消除当前告警；自动弹出本身不能直接消警，子控件仍需执行原有点击行为。
 - 清除或 dismiss 告警时，相关 pulse/breathing 动画必须立即停止，不能只隐藏文字。
-- 当前 macOS popover 发生过告警后，告警槽位应保留到该窗口关闭；消警不得改变窗口尺寸、圆环直径、配额行高度或内容起点。重新打开无告警窗口时才恢复紧凑布局。
+- 当前 macOS popover 发生过告警后，告警槽位应保留到该窗口关闭；消警不得改变窗口尺寸、provider 行高度、Agent 会话面板高度或内容起点。重新打开无告警窗口时才恢复紧凑布局。
 - macOS popover 的实体背景只设置在根内容层；不得递归给 SwiftUI/AppKit 子视图启用 layer 或填充背景，否则文字、SF Symbols 和控件会出现白色矩形底。
 - macOS popover 底部常驻一条 footer，内含 `Quit Rinq` 退出按钮（`NSApplication.shared.terminate`）。它在所有标签页可见，其高度是布局固定项。菜单 launch agent 使用 `KeepAlive={SuccessfulExit=false}`，用户主动退出后不重启，崩溃或下次登录仍自启。
 - macOS popover 打开后若 10 秒内无窗口内交互（点击、滚动、按键、拖拽、指针移动）则自动收起。任何窗口内交互都重置该计时。存在活动告警时不自动收起，告警消除后重新计时。收起或关闭 popover 时必须取消计时器并移除事件监视器，不得泄漏。

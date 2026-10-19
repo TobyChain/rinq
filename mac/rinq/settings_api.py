@@ -30,7 +30,6 @@ def _has_credential(cfg: dict, vendor: str) -> bool:
 
 
 def public_settings(cfg: dict) -> dict[str, Any]:
-    enabled = cfg.get("enabled") or {}
     keys = cfg.get("keys") or {}
     vendors = []
     for vid in cfg_mod.VENDOR_IDS:
@@ -40,8 +39,8 @@ def public_settings(cfg: dict) -> dict[str, Any]:
             "label": VENDOR_META[vid]["label"],
             "accent": VENDOR_META[vid]["accent"],
             "kind": VENDOR_META[vid]["kind"],
-            # enabled when explicitly true, or implicitly when a credential exists
-            "enabled": bool(enabled.get(vid, has)),
+            # Keep the response field for clients; credentials determine activity.
+            "enabled": has,
             "hasCredential": has,
             "hasKeySet": bool(keys.get(vid)),
         })
@@ -55,7 +54,7 @@ def public_settings(cfg: dict) -> dict[str, Any]:
 
 
 def apply_public_settings(cfg: dict, patch: dict) -> dict:
-    """Merge a settings patch (keys, enabled, ringOrder) into cfg and persist."""
+    """Save keys and ring order; legacy activation toggles have no effect."""
     if "keys" in patch and isinstance(patch["keys"], dict):
         keys = cfg.setdefault("keys", {})
         for vid, val in patch["keys"].items():
@@ -67,11 +66,6 @@ def apply_public_settings(cfg: dict, patch: dict) -> dict:
             elif vid in keys:
                 # empty string clears a user-entered key (auto-discovery may still find one)
                 del keys[vid]
-    if "enabled" in patch and isinstance(patch["enabled"], dict):
-        enabled = cfg.setdefault("enabled", {})
-        for vid, val in patch["enabled"].items():
-            if vid in cfg_mod.VENDOR_IDS:
-                enabled[vid] = bool(val)
     if "ringOrder" in patch and isinstance(patch["ringOrder"], list):
         valid = set(_all_ring_ids())
         cfg["ringOrder"] = [r for r in patch["ringOrder"] if r in valid]

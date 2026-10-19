@@ -23,44 +23,38 @@ struct DashboardView: View {
 
     private var content: some View {
         let allRings = store.status?.rings ?? []
-        let quotaRings = RingPresentation.quotaRings(allRings)
-        return VStack(spacing: 8) {
-            if !quotaRings.isEmpty {
-                RingsView(
-                    rings: quotaRings,
-                    alerts: store.alerts,
-                    diameter: layout.ringDiameter
-                )
-                    .padding(.top, 4)
+        return VStack(spacing: 0) {
+            if let snapshot = store.sessions, snapshot.sessions.contains(where: { $0.isOpen == true }) {
+                AgentSessionsPanel(snapshot: snapshot)
             }
-
-            LazyVGrid(
-                columns: Array(
-                    repeating: GridItem(.flexible(), spacing: 12),
-                    count: layout.columns
-                ),
-                spacing: 8
-            ) {
-                ForEach(allRings) { ring in
-                    BarRow(
-                        ring: ring,
-                        alerts: store.alerts,
-                        compact: layout.columns == 2
-                    )
-                }
-            }
-            .padding(.horizontal, 14)
 
             if allRings.isEmpty {
                 Text("No active rings. Add a provider in the Providers tab.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: PopoverLayout.emptyRowsHeight)
+                    .padding(.horizontal, 14)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(allRings) { ring in
+                        ProviderQuotaRow(
+                            ring: ring,
+                            alerts: store.alerts
+                        )
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
             }
+
+            Spacer(minLength: 0)
 
             Text(updated)
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
+                .padding(.top, 4)
                 .padding(.bottom, 6)
         }
         .frame(maxWidth: .infinity)
@@ -202,7 +196,7 @@ struct ProviderRow: View {
                         .controlSize(.small)
                 }
                 HStack(spacing: 8) {
-                    Label(vendor.hasCredential ? "credential found" : "no credential",
+                    Label(vendor.hasCredential ? "active" : "not connected",
                           systemImage: vendor.hasCredential ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(vendor.hasCredential ? .green : .secondary)
                         .font(.system(size: 10))
@@ -223,15 +217,9 @@ struct ProviderRow: View {
                 Circle().fill(Palette.color(vendor.accent)).frame(width: 10, height: 10)
                 Text(vendor.label).font(.system(size: 12, weight: .medium))
                 Spacer()
-                if vendor.hasCredential {
-                    Image(systemName: "bolt.fill").foregroundStyle(.green).font(.system(size: 10))
-                }
-                Toggle("", isOn: Binding(
-                    get: { vendor.enabled },
-                    set: { _ in Task { await store.toggle(vendor) } }))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
+                Text(vendor.hasCredential ? "active" : "not connected")
+                    .font(.system(size: 10))
+                    .foregroundStyle(vendor.hasCredential ? .green : .secondary)
             }
         }
     }

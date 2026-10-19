@@ -63,34 +63,41 @@ final class RingPresentationTests: XCTestCase {
 }
 
 final class PopoverLayoutTests: XCTestCase {
-    func testUpToFiveRingsUseOneColumn() {
+    func testFewProviderRowsFitWithoutScrolling() {
         let layout = PopoverLayout.make(
             ringCount: 5,
             visibleScreenSize: CGSize(width: 1440, height: 900)
         )
-        XCTAssertEqual(layout.columns, 1)
-        XCTAssertLessThanOrEqual(layout.height, 450)
+        XCTAssertEqual(layout.width, 480)
+        XCTAssertLessThanOrEqual(layout.height, 530)
         XCTAssertFalse(layout.scrolls)
     }
 
-    func testSixOrMoreRingsUseTwoColumns() {
+    func testManyProviderRowsScrollWithinBoundedWidth() {
         let layout = PopoverLayout.make(
             ringCount: 8,
             visibleScreenSize: CGSize(width: 1440, height: 900)
         )
-        XCTAssertEqual(layout.columns, 2)
-        XCTAssertEqual(layout.width, 620)
-        XCTAssertLessThanOrEqual(layout.height, 450)
-        XCTAssertFalse(layout.scrolls)
+        XCTAssertEqual(layout.width, 480)
+        XCTAssertTrue(layout.scrolls)
+        XCTAssertLessThanOrEqual(layout.height + 28, 558)
     }
 
-    func testHeightNeverExceedsHalfScreen() {
+    func testHeightNeverExceedsExpandedScreenLimit() {
         let layout = PopoverLayout.make(
             ringCount: 30,
             visibleScreenSize: CGSize(width: 1000, height: 700)
         )
-        XCTAssertLessThanOrEqual(layout.height + 28, 350)
+        XCTAssertLessThanOrEqual(layout.height + 28, 434)
         XCTAssertTrue(layout.scrolls)
+    }
+
+    func testNarrowScreenKeepsMinimumWidth() {
+        let layout = PopoverLayout.make(
+            ringCount: 2,
+            visibleScreenSize: CGSize(width: 340, height: 700)
+        )
+        XCTAssertEqual(layout.width, 360)
     }
 
     func testAlertLayoutReservesAVisibleSlot() {
@@ -101,7 +108,21 @@ final class PopoverLayoutTests: XCTestCase {
         XCTAssertFalse(plain.reservesAlertSpace)
         XCTAssertTrue(alert.reservesAlertSpace)
         XCTAssertGreaterThan(alert.height, plain.height)
-        XCTAssertLessThanOrEqual(alert.height + 28, 450)
+        XCTAssertLessThanOrEqual(alert.height + 28, 558)
+    }
+
+    func testAgentStripReservesItsSlot() {
+        let size = CGSize(width: 1440, height: 900)
+        let plain = PopoverLayout.make(ringCount: 4, visibleScreenSize: size)
+        let strip = PopoverLayout.make(
+            ringCount: 4, visibleScreenSize: size, showsAgentStrip: true
+        )
+
+        XCTAssertEqual(
+            strip.height,
+            plain.height + PopoverLayout.agentHeaderHeight + PopoverLayout.agentSessionRowHeight + 8
+        )
+        XCTAssertFalse(strip.scrolls)
     }
 
     func testAlertLayoutStaysIdenticalAfterDismissalUntilPopoverCloses() {
@@ -131,20 +152,17 @@ final class PopoverLayoutTests: XCTestCase {
         // The persistent quit footer must always fit inside the popover, so its
         // height is part of the fixed chrome regardless of ring count.
         XCTAssertGreaterThanOrEqual(layout.height, PopoverLayout.footerHeight)
-        XCTAssertLessThanOrEqual(layout.height + 28, 450)
+        XCTAssertLessThanOrEqual(layout.height + 28, 558)
     }
 
     func testSparseWindowKeepsMinimumHeight() {
         let size = CGSize(width: 1440, height: 900)
-        // A single status-only source renders no ring visualization; without a
-        // floor the window collapses to a stub shorter than a one-ring
-        // dashboard. The minimum keeps the sparse window as tall as the
-        // one-ring presentation.
+        // Empty and single-source dashboards retain the same minimum height.
         let sparse = PopoverLayout.make(
-            ringCount: 1, visibleScreenSize: size, showsRingVisualization: false
+            ringCount: 0, visibleScreenSize: size
         )
         let oneRing = PopoverLayout.make(
-            ringCount: 1, visibleScreenSize: size, showsRingVisualization: true
+            ringCount: 1, visibleScreenSize: size
         )
         XCTAssertEqual(sparse.height, oneRing.height)
         XCTAssertGreaterThanOrEqual(sparse.height, 300)
@@ -329,6 +347,17 @@ final class AlertDismissalTests: XCTestCase {
             resetsAt: nil, windowMins: 300, accent: "blue", spentUsd: nil, budgetUsd: nil,
             usedValue: 80, totalValue: 100, valueUnit: "percent", status: nil, statusDetail: nil
         )], updatedAt: nil)
+        store.sessions = SessionSnapshot(
+            version: 1, updatedAt: 1,
+            sessions: (0..<8).map { index in
+                AgentSession(
+                    id: "claude:fixture-\(index)", app: "Claude Code", adapter: "claude_code",
+                    project: "rinq", cwd: "/tmp/rinq-fixture", model: "fixture-model",
+                    provider: "anthropic", state: "running", isOpen: true, subagentCount: 0,
+                    summary: "Synthetic activity", startedAt: 1, updatedAt: 1, source: "hook"
+                )
+            }, counts: nil
+        )
         store.alerts = [QuotaAlert(
             ringID: "codex-5h", label: "Codex 5h", level: .warning, reason: .lowQuota,
             message: "Codex 5h has 20% remaining"
@@ -341,6 +370,8 @@ final class AlertDismissalTests: XCTestCase {
         hosting.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.01))
         let before = hosting.fittingSize
+        XCTAssertEqual(before.width, 480)
+        XCTAssertLessThanOrEqual(before.height + 28, 558)
 
         XCTAssertTrue(store.dismissAlerts())
         RunLoop.main.run(until: Date().addingTimeInterval(0.01))

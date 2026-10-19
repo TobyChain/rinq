@@ -40,6 +40,12 @@ def cmd_push(args: argparse.Namespace) -> int:
     ev = {"source": args.source or "cli", "state": args.state, "title": args.title}
     if args.detail:
         ev["detail"] = args.detail
+    if args.app:
+        ev["app"] = args.app
+    if args.session_id:
+        ev["sessionId"] = args.session_id
+    if args.cwd:
+        ev["cwd"] = args.cwd
     try:
         _post("/event", ev)
     except (urllib.error.URLError, ConnectionError):
@@ -62,6 +68,53 @@ def cmd_focus(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sessions(_args: argparse.Namespace) -> int:
+    from .sessions import build_sessions
+    from .state import load_state
+
+    print(json.dumps(build_sessions(load_state()), indent=2, ensure_ascii=False))
+    return 0
+
+
+def cmd_hook_claude(_args: argparse.Namespace) -> int:
+    raw = sys.stdin.read()
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return 0
+    event = payload.get("hook_event_name", "")
+    cwd = str(payload.get("cwd", "") or "")
+    session_id = str(payload.get("session_id", "") or "")
+    ev: dict[str, Any] = {"source": "claude-code", "app": "Claude Code"}
+    if session_id:
+        ev["sessionId"] = f"claude:{session_id}"
+    if cwd:
+        ev["cwd"] = cwd
+    if event == "SessionStart" or event == "UserPromptSubmit":
+        ev.update(state="started", title="Claude Code session")
+    elif event == "Notification":
+        ntype = str(payload.get("notification_type", ""))
+        if "permission" in ntype:
+            ev.update(state="waiting", title="Claude Code needs approval")
+        else:
+            ev.update(state="waiting", title="Claude Code is waiting")
+    elif event == "Stop":
+        ev.update(state="idle", title="Claude Code is idle")
+    elif event == "SessionEnd":
+        ev.update(state="closed", title="Claude Code session closed")
+    elif event == "SubagentStart":
+        ev.update(state="subagents_running", title="Claude Code subagents running")
+    elif event == "SubagentStop":
+        ev.update(state="running", title="Claude Code resumed")
+    else:
+        return 0
+    try:
+        _post("/event", ev)
+    except Exception:
+        pass
+    return 0
+
+
 def cmd_hook_traex(_args: argparse.Namespace) -> int:
     raw = sys.stdin.read()
     try:
@@ -69,9 +122,17 @@ def cmd_hook_traex(_args: argparse.Namespace) -> int:
     except json.JSONDecodeError:
         return 0
     event = payload.get("hook_event_name") or payload.get("event_type") or ""
-    ev: dict[str, Any] = {"source": "traex"}
+    ev: dict[str, Any] = {"source": "traex", "app": "TraeX"}
+    cwd = str(payload.get("cwd", "") or "")
+    session_id = str(payload.get("session_id", "") or payload.get("sessionId", "") or "")
+    if cwd:
+        ev["cwd"] = cwd
+    if session_id:
+        ev["sessionId"] = f"traex:{session_id}"
     if event == "Stop":
-        ev.update(state="completed", title="TraeX turn complete")
+        ev.update(state="idle", title="TraeX is idle")
+    elif event == "SessionEnd":
+        ev.update(state="closed", title="TraeX session closed")
     elif event == "Notification":
         ntype = payload.get("notification_type", "")
         if "permission" in ntype:
@@ -100,12 +161,20 @@ def cmd_hook_codex(args: argparse.Namespace) -> int:
     if payload.get("type") != "agent-turn-complete":
         return 0
     title = "Codex turn complete"
-    ev = {
+    ev: dict[str, Any] = {
         "source": "codex",
-        "state": "completed",
+        "app": "Codex CLI",
+        "state": "idle",
         "title": title,
-        "detail": str(payload.get("last-assistant-message", ""))[:200],
     }
+    cwd = str(payload.get("cwd", "") or "")
+    session_id = str(
+        payload.get("thread-id", "") or payload.get("session_id", "") or payload.get("sessionId", "") or ""
+    )
+    if cwd:
+        ev["cwd"] = cwd
+    if session_id:
+        ev["sessionId"] = f"codex:{session_id}"
     try:
         _post("/event", ev)
     except Exception:
@@ -131,14 +200,26 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_serve)
 
     s = sub.add_parser("push", help="record an agent event")
-    s.add_argument("--state", required=True, choices=["started", "completed", "failed", "waiting"])
+    s.add_argument(
+        "--state", required=True,
+        choices=["started", "running", "subagents_running", "waiting", "idle", "completed", "failed", "closed"],
+    )
     s.add_argument("--title", required=True)
     s.add_argument("--detail", default="")
     s.add_argument("--source", default="cli")
+    s.add_argument("--app", default="")
+    s.add_argument("--session-id", default="")
+    s.add_argument("--cwd", default="")
     s.set_defaults(func=cmd_push)
 
     s = sub.add_parser("focus", help="start a 50m focus countdown")
     s.set_defaults(func=cmd_focus)
+
+    s = sub.add_parser("sessions", help="print live local agent sessions as JSON")
+    s.set_defaults(func=cmd_sessions)
+
+    s = sub.add_parser("hook-claude", help="read a Claude Code hook payload from stdin")
+    s.set_defaults(func=cmd_hook_claude)
 
     s = sub.add_parser("hook-traex", help="read a TraeX hook payload from stdin")
     s.set_defaults(func=cmd_hook_traex)

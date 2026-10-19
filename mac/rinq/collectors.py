@@ -167,7 +167,13 @@ def _get_json(
         # Silent failures hide real causes (a long-lived daemon can lose its
         # outbound network after sleep/wake and show only "quota unavailable"
         # for hours). Log the URL and exception class; never the key or body.
-        print(f"collector fetch failed: {url}: {type(exc).__name__}: {exc}",
+        # Jina passes its key in the query string; exceptions can repeat the
+        # complete URL too, so log only the endpoint and exception class.
+        parsed = urllib.parse.urlsplit(url)
+        endpoint = urllib.parse.urlunsplit((
+            parsed.scheme, parsed.netloc.rsplit("@", 1)[-1], parsed.path, "", ""
+        ))
+        print(f"collector fetch failed: {endpoint}: {type(exc).__name__}",
               file=sys.stderr, flush=True)
         return None
 
@@ -615,15 +621,19 @@ def _status_ring(vendor: str, status: str) -> dict[str, Any]:
 
 
 def collect(cfg: dict) -> list[dict[str, Any]]:
-    enabled = cfg.get("enabled") or {}
+    """Fetch credentialed providers concurrently; mock-only remains offline."""
     collector_names = list(cfg.get("collectors", ["mock"]))
-    for name, is_enabled in enabled.items():
-        if is_enabled is True and name in _COLLECTORS and name not in collector_names:
+    active = {
+        name for name in _STATUS_META
+        if collector_names != ["mock"] and sources.has_vendor_credential(cfg, name)
+    }
+    for name in _STATUS_META:
+        if name in active and name not in collector_names:
             collector_names.append(name)
     jobs = [
         (name, _COLLECTORS[name])
         for name in collector_names
-        if enabled.get(name) is not False and name in _COLLECTORS
+        if name in _COLLECTORS and (name == "mock" or name in active)
     ]
     # Providers are independent HTTPS endpoints; fetch them concurrently so
     # one slow provider (up to the 20s fetch timeout) does not stretch a
@@ -638,19 +648,14 @@ def collect(cfg: dict) -> list[dict[str, Any]]:
     for (name, _fn), collected in zip(jobs, results):
         if collected:
             rings.extend(collected)
-        # Explicitly enabled providers stay visible even when no live quota
-        # is available (a failed or empty fetch included). The status item is
-        # not a percentage and does not participate in quota alerts.
-        elif enabled.get(name) is True and name in _STATUS_META:
-            if not sources.has_vendor_credential(cfg, name):
-                status = "not_connected"
-            elif name in _QUOTA_UNSUPPORTED_VENDORS:
+        # A connected provider stays visible when quota lookup fails.
+        # Status rows are not percentages and do not trigger quota alerts.
+        elif name in active:
+            if name in _QUOTA_UNSUPPORTED_VENDORS:
                 status = "quota_unsupported"
             else:
                 status = "quota_unavailable"
             rings.append(_status_ring(name, status))
-    # Hide rings for vendors the user explicitly turned off.
-    rings = [r for r in rings if enabled.get(r.get("vendor"), True) is not False]
     from . import config as _config
     rings.sort(key=_config.ring_sort_key(cfg))
     return rings
@@ -676,6 +681,6 @@ def _run_collector(
             )
         ]
     except Exception as exc:  # noqa: BLE001 - isolation is the point
-        print(f"collector {name} failed: {type(exc).__name__}: {exc}",
+        print(f"collector {name} failed: {type(exc).__name__}",
               file=sys.stderr, flush=True)
         return []

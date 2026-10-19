@@ -1,32 +1,5 @@
 import SwiftUI
 
-struct RingsView: View {
-    let rings: [Ring]
-    var alerts: [QuotaAlert] = []
-    var diameter: CGFloat = 190
-
-    var body: some View {
-        let visibleRings = rings.filter(\.hasQuotaValue)
-        // Adapt the ring thickness/gap to how many there are so any number
-        // fits inside the outer diameter.
-        let n = max(visibleRings.count, 1)
-        let lineWidth = min(13, (diameter - 30) / (CGFloat(n) * 2.3))
-        let step = lineWidth + 6
-        ZStack {
-            ForEach(Array(visibleRings.enumerated()), id: \.element.id) { idx, ring in
-                let d = diameter - CGFloat(idx) * 2 * step
-                RingArc(ring: ring, alert: alert(for: ring), lineWidth: lineWidth)
-                    .frame(width: max(d, lineWidth * 2), height: max(d, lineWidth * 2))
-            }
-        }
-        .frame(width: diameter, height: diameter)
-    }
-
-    private func alert(for ring: Ring) -> QuotaAlert? {
-        alerts.first { $0.ringID == ring.id }
-    }
-}
-
 struct RingArc: View {
     let ring: Ring
     var alert: QuotaAlert?
@@ -80,45 +53,39 @@ struct RingArc: View {
     }
 }
 
-struct BarRow: View {
+/// One provider per row: identity and quota text on the leading side, a
+/// standalone progress ring with the percentage at the trailing edge.
+struct ProviderQuotaRow: View {
     let ring: Ring
     var alerts: [QuotaAlert] = []
-    var compact = false
     @State private var pulse = false
 
-    private var pct: Int { ring.usedPercent ?? 0 }
-
     var body: some View {
-        HStack(spacing: compact ? 8 : 12) {
-            RingArc(ring: ring, alert: alert, lineWidth: 4)
-                .frame(width: compact ? 22 : 26, height: compact ? 22 : 26)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text(ring.label)
-                        .font(.system(size: compact ? 11 : 13, weight: .semibold))
-                        .lineLimit(1)
-                    Spacer()
-                    Text(alert?.message ?? ring.usageText)
-                        .font(.system(size: compact ? 10 : 13, weight: .bold, design: .rounded))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .foregroundStyle(alertColor)
-                }
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(alertColor.opacity(0.16))
-                        Capsule().fill(alertColor)
-                            .frame(width: geo.size.width * CGFloat(pct) / 100)
-                    }
-                }
-                .frame(height: 6)
-                Text(detail)
-                    .font(.system(size: compact ? 9 : 10))
-                    .foregroundStyle(.secondary)
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(ring.label)
+                    .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 10))
+                    .foregroundStyle(alert == nil ? .secondary : alertColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
+            Spacer(minLength: 6)
+            ZStack {
+                RingArc(ring: ring, alert: alert, lineWidth: 4.5)
+                Text(ring.ringCenterText)
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundStyle(alert == nil ? .primary : alertColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .frame(width: 36, height: 36)
         }
-        .frame(minHeight: 38)
+        .padding(.horizontal, 10)
+        .frame(height: PopoverLayout.providerRowHeight - 2)
+        .padding(.vertical, 1)
         .background(alertColor.opacity(isPulsing ? 0.14 : 0.05), in: RoundedRectangle(cornerRadius: 8))
         .help(ring.hoverText)
         .onAppear { updatePulse(active: alert != nil) }
@@ -137,10 +104,10 @@ struct BarRow: View {
         }
     }
 
-    private var detail: String {
-        if let statusDetail = ring.statusDetail { return statusDetail }
-        if let resetText = ring.resetText { return resetText }
-        return "\(pct)%"
+    private var subtitle: String {
+        if let alert { return alert.message }
+        let detail = ring.statusDetail ?? ring.resetText ?? ""
+        return detail.isEmpty ? ring.valueText : "\(ring.valueText) · \(detail)"
     }
 
     private func updatePulse(active: Bool) {

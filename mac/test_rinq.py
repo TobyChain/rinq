@@ -64,6 +64,25 @@ class EventTests(unittest.TestCase):
         self.assertEqual(state_mod.clamp_pct(-5), 0)
         self.assertIsNone(state_mod.clamp_pct(None))
 
+    def test_codex_hook_accepts_thread_id(self) -> None:
+        from rinq import cli
+
+        recorded = {}
+        original_post = cli._post
+        cli._post = lambda _path, payload: recorded.update(payload) or {"ok": True}
+        try:
+            args = type("Args", (), {"payload": json.dumps({
+                "type": "agent-turn-complete",
+                "thread-id": "codex-thread-1",
+                "cwd": "/tmp/codex-thread",
+            })})()
+            self.assertEqual(cli.cmd_hook_codex(args), 0)
+        finally:
+            cli._post = original_post
+
+        self.assertEqual(recorded["sessionId"], "codex:codex-thread-1")
+        self.assertEqual(recorded["cwd"], "/tmp/codex-thread")
+
 
 class CollectorTests(unittest.TestCase):
     def test_no_key_returns_no_rings(self) -> None:
@@ -78,21 +97,32 @@ class CollectorTests(unittest.TestCase):
         rings = collectors.collect(cfg)
         self.assertEqual(rings, [])
 
-    def test_enabled_false_hides_vendor(self) -> None:
-        cfg = {"collectors": ["mock"], "enabled": {"deepseek": False}}
-        ids = [r["id"] for r in collectors.collect(cfg)]
-        self.assertNotIn("deepseek-balance", ids)
+    def test_credential_activates_provider_despite_legacy_disabled_flag(self) -> None:
+        from rinq import settings_api
+        cfg = {"collectors": ["anthropic"], "keys": {"anthropic": "test-key"},
+               "enabled": {"anthropic": False}}
+        rings = collectors.collect(cfg)
+        self.assertEqual([r["id"] for r in rings], ["anthropic-status"])
+        self.assertEqual(rings[0]["status"], "quota_unsupported")
+        original = integrations.discover_integrations
+        integrations.discover_integrations = lambda: []
+        try:
+            vendor = next(v for v in settings_api.public_settings(cfg)["vendors"]
+                          if v["id"] == "anthropic")
+        finally:
+            integrations.discover_integrations = original
+        self.assertTrue(vendor["enabled"])
+        self.assertTrue(vendor["hasCredential"])
+        self.assertNotIn("test-key", json.dumps(vendor))
 
-    def test_enabled_provider_without_credential_has_status_item(self) -> None:
+    def test_legacy_enabled_provider_without_credential_stays_hidden(self) -> None:
         cfg = {"collectors": ["anthropic"], "enabled": {"anthropic": True}, "ringOrder": []}
         rings = collectors.collect(cfg)
-        self.assertEqual([ring["id"] for ring in rings], ["anthropic-status"])
-        self.assertEqual(rings[0]["status"], "not_connected")
-        self.assertIsNone(rings[0]["usedPercent"])
+        self.assertEqual(rings, [])
 
-    def test_enabled_provider_with_failed_quota_has_unavailable_status(self) -> None:
+    def test_credentialed_provider_with_failed_quota_has_unavailable_status(self) -> None:
         cfg = {
-            "collectors": ["zhipu"], "enabled": {"zhipu": True},
+            "collectors": ["zhipu"],
             "keys": {"zhipu": "test-key"}, "ringOrder": [],
         }
         original = collectors._get_json
@@ -145,16 +175,18 @@ class CollectorTests(unittest.TestCase):
         buf = io.StringIO()
         with redirect_stderr(buf):
             data = collectors._get_json(
-                "http://127.0.0.1:1/none", "secret-key-that-must-not-leak"
+                "http://127.0.0.1:1/none?api_key=query-secret-must-not-leak",
+                "secret-key-that-must-not-leak"
             )
         self.assertIsNone(data)
         out = buf.getvalue()
         self.assertIn("collector fetch failed", out)
         self.assertIn("127.0.0.1:1", out)
         self.assertNotIn("secret-key-that-must-not-leak", out)
+        self.assertNotIn("query-secret-must-not-leak", out)
 
-    def test_explicit_enable_adds_provider_missing_from_legacy_collector_list(self) -> None:
-        cfg = {"collectors": ["codex"], "enabled": {"anthropic": True}, "ringOrder": []}
+    def test_credential_adds_provider_missing_from_legacy_collector_list(self) -> None:
+        cfg = {"collectors": ["codex"], "keys": {"anthropic": "test-key"}, "ringOrder": []}
         rings = collectors.collect(cfg)
         self.assertIn("anthropic-status", [ring["id"] for ring in rings])
 
@@ -407,6 +439,8 @@ class ConfigEndpointTests(unittest.TestCase):
                 f"http://127.0.0.1:{server.server_address[1]}/usage", timeout=5
             ) as response:
                 body = json.loads(response.read().decode())
+                self.assertIsNone(response.headers.get("Access-Control-Allow-Origin"))
+                self.assertEqual(response.headers.get("Cache-Control"), "no-store")
             self.assertEqual(response.status, 200)
             self.assertEqual(body["version"], 1)
             self.assertIn("today", body)
@@ -455,6 +489,54 @@ class ConfigEndpointTests(unittest.TestCase):
         self.assertEqual(response["code"], 403)
         self.assertEqual(response["body"]["error"], "config changes are local-only")
 
+    def test_build_status_does_not_overwrite_event_during_slow_collect(self) -> None:
+        from rinq import server as server_mod
+
+        started = threading.Event()
+        release = threading.Event()
+        event_done = threading.Event()
+        original_collect = server_mod.collect
+        original_build_sessions = server_mod.build_sessions
+        state_mod.update_state(lambda state: state.clear() or state.update(state_mod.blank_state()))
+        server_mod.invalidate_sessions_cache()
+
+        def slow_collect(_cfg: dict) -> list[dict]:
+            started.set()
+            self.assertTrue(release.wait(2))
+            return []
+
+        server_mod.collect = slow_collect
+        server_mod.build_sessions = lambda state=None: {
+            "version": 1,
+            "updatedAt": 0,
+            "sessions": [],
+            "counts": {"running": 0, "subagentsRunning": 0, "waiting": 0},
+        }
+        try:
+            worker = threading.Thread(target=server_mod.build_status, daemon=True)
+            worker.start()
+            self.assertTrue(started.wait(1))
+
+            def apply_close() -> None:
+                state_mod.update_state(lambda state: events.apply_event(state, {
+                    "state": "closed", "title": "session closed",
+                    "sessionId": "claude:slow", "app": "Claude Code",
+                }, {"push": {}}))
+                event_done.set()
+
+            closer = threading.Thread(target=apply_close, daemon=True)
+            closer.start()
+            self.assertTrue(event_done.wait(1))
+            release.set()
+            worker.join(2)
+            closer.join(2)
+        finally:
+            server_mod.collect = original_collect
+            server_mod.build_sessions = original_build_sessions
+
+        saved = state_mod.load_state()
+        self.assertIn("claude:slow", saved["closedSessions"])
+
 
 class UsageTests(unittest.TestCase):
     def test_discovers_omp_sessions_from_agent_dir(self) -> None:
@@ -499,6 +581,34 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(event[2:5], ("OMP", "minimax-code-cn", "MiniMax-M3"))
         self.assertEqual(event[5:10], (120, 30, 80, 4, 5))
         self.assertEqual(event[10], "omp:assistant-1:2026-09-16T01:00:00Z")
+
+    def test_pi_assistant_usage_shape(self) -> None:
+        line = json.dumps({
+            "type": "message",
+            "id": "pi-1",
+            "timestamp": "2026-10-19T01:00:00Z",
+            "message": {
+                "role": "assistant",
+                "provider": "pi-cn",
+                "model": "Pi Max",
+                "usage": {
+                    "inputTokens": 55,
+                    "outputTokens": 21,
+                    "cacheReadTokens": 13,
+                    "cacheWriteTokens": 2,
+                    "reasoningTokens": 3,
+                },
+            },
+        }).encode()
+        event = usage._token_event(
+            "pi", line, "Pi", None, None, __import__("datetime").timezone.utc
+        )
+
+        self.assertIsNotNone(event)
+        self.assertEqual(event[0], 1792371600)
+        self.assertEqual(event[2:5], ("Pi", "pi-cn", "Pi Max"))
+        self.assertEqual(event[5:10], (55, 21, 13, 2, 3))
+        self.assertEqual(event[10], "pi:pi-1:2026-10-19T01:00:00Z")
 
     def test_omp_ignores_non_assistant_and_unidentified_messages(self) -> None:
         base = {
@@ -708,6 +818,280 @@ class UsageTests(unittest.TestCase):
             columns = [row[1] for row in db.execute("PRAGMA table_info(usage_events)")]
             self.assertNotIn("secret_prompt", columns)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM usage_events").fetchone()[0], 3)
+
+
+class SessionOverviewTests(unittest.TestCase):
+    ENV_NAMES = (
+        "CODEX_HOME", "TRAE_HOME", "TRAECLI_HOME", "CLAUDE_CONFIG_DIR",
+        "ZCODE_HOME", "PI_CODING_AGENT_DIR", "PI_AGENT_DIR",
+    )
+
+    def setUp(self) -> None:
+        self.cfg = {"push": {}}
+        self.previous = {name: os.environ.get(name) for name in self.ENV_NAMES}
+        root = tempfile.mkdtemp(prefix="rinq-sessions-")
+        os.environ["CODEX_HOME"] = os.path.join(root, "no-codex")
+        os.environ["TRAE_HOME"] = os.path.join(root, "no-trae")
+        os.environ["TRAECLI_HOME"] = os.path.join(root, "no-trae-cli")
+        os.environ["CLAUDE_CONFIG_DIR"] = os.path.join(root, "claude")
+        os.environ["ZCODE_HOME"] = os.path.join(root, "no-zcode")
+        os.environ["PI_CODING_AGENT_DIR"] = os.path.join(root, "no-omp")
+        os.environ["PI_AGENT_DIR"] = os.path.join(root, "no-pi")
+        self.claude_root = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "projects")
+
+    def tearDown(self) -> None:
+        for name, value in self.previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+    def _write_claude(self, encoded_cwd: str, session_uuid: str, rows: list, mtime_ts: int) -> None:
+        directory = os.path.join(self.claude_root, encoded_cwd)
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, session_uuid + ".jsonl")
+        with open(path, "w", encoding="utf-8") as stream:
+            for row in rows:
+                stream.write(json.dumps(row) + "\n")
+        os.utime(path, (mtime_ts, mtime_ts))
+
+    def test_claude_log_state_and_hook_overlay(self) -> None:
+        import time
+        from rinq import sessions
+
+        now = int(time.time())
+        rows = [
+            {"type": "user", "sessionId": "s1", "cwd": "/tmp/demo", "timestamp": now - 60,
+             "message": {"role": "user", "content": [
+                 {"type": "text", "text": "do the thing"}]}},
+            {"type": "assistant", "sessionId": "s1", "cwd": "/tmp/demo", "timestamp": now - 30,
+             "message": {"model": "claude-x", "content": [
+                 {"type": "text", "text": "working on it"},
+                 {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}]}},
+        ]
+        self._write_claude("-tmp-demo", "uuid-s1", rows, now)
+
+        snapshot = sessions.build_sessions({}, now)
+        session = next(s for s in snapshot["sessions"] if s["id"] == "claude:s1")
+        self.assertEqual(session["state"], "running")
+        self.assertEqual(session["summary"], "working on it")
+        self.assertEqual(session["project"], "demo")
+        self.assertEqual(session["source"], "log")
+        self.assertEqual(snapshot["counts"]["running"], 1)
+
+        overlay = {"agentSessions": {"claude:s1": {
+            "state": "waiting", "title": "needs approval", "app": "Claude Code", "at": now}}}
+        overlayed = sessions.build_sessions(overlay, now)
+        merged = next(s for s in overlayed["sessions"] if s["id"] == "claude:s1")
+        self.assertEqual(merged["state"], "waiting")
+        self.assertEqual(merged["source"], "hook")
+        self.assertEqual(overlayed["counts"]["waiting"], 1)
+
+    def test_slash_command_markup_is_stripped_from_summary(self) -> None:
+        import time
+        from rinq import sessions
+
+        now = int(time.time())
+        rows = [
+            {"type": "user", "sessionId": "s2", "cwd": "/tmp/demo2", "timestamp": now - 100,
+             "message": {"role": "user", "content": [
+                 {"type": "text",
+                  "text": "<command-name>/clear</command-name>\n<command-message>clear</command-message>"}]}},
+        ]
+        self._write_claude("-tmp-demo2", "uuid-s2", rows, now - 100)
+
+        snapshot = sessions.build_sessions({}, now)
+        session = next((s for s in snapshot["sessions"] if s["id"] == "claude:s2"), None)
+        self.assertIsNotNone(session)
+        self.assertNotIn("<command-name>", session["summary"])
+
+    def test_open_sessions_group_by_cli_then_state(self) -> None:
+        import time
+        from rinq import sessions
+
+        now = int(time.time())
+        state = {"agents": {}, "agentSessions": {
+            "claude:idle": {"state": "idle", "app": "Claude Code", "at": now},
+            "claude:running": {"state": "started", "app": "Claude Code", "at": now},
+            "codex:waiting": {"state": "waiting", "app": "Codex CLI", "at": now},
+            "pi:sub": {"state": "subagents_running", "app": "Pi", "at": now},
+        }}
+        snapshot = sessions.build_sessions(state, now)
+        self.assertEqual(
+            [session["id"] for session in snapshot["sessions"]],
+            ["claude:running", "claude:idle", "codex:waiting", "pi:sub"],
+        )
+        self.assertEqual(snapshot["counts"]["subagentsRunning"], 1)
+
+    def test_claude_task_tool_is_subagents_running(self) -> None:
+        import time
+        from rinq import sessions
+
+        now = int(time.time())
+        rows = [{
+            "type": "assistant", "sessionId": "s-sub", "cwd": "/tmp/subagents",
+            "timestamp": now - 10,
+            "message": {"model": "claude-x", "content": [
+                {"type": "tool_use", "name": "Task", "input": {"description": "inspect"}},
+            ]},
+        }]
+        self._write_claude("-tmp-subagents", "uuid-sub", rows, now)
+        snapshot = sessions.build_sessions({}, now)
+        session = next(s for s in snapshot["sessions"] if s["id"] == "claude:s-sub")
+        self.assertEqual(session["state"], "subagents_running")
+        self.assertEqual(session["subagentCount"], 1)
+
+    def test_session_end_clears_open_session_and_suppresses_old_log(self) -> None:
+        import time
+        from rinq import sessions
+
+        now = int(time.time())
+        rows = [{
+            "type": "user", "sessionId": "s3", "cwd": "/tmp/demo3", "timestamp": now - 20,
+            "message": {"role": "user", "content": [{"type": "text", "text": "still open"}]},
+        }]
+        self._write_claude("-tmp-demo3", "uuid-s3", rows, now - 20)
+        state = state_mod.blank_state()
+        events.apply_event(state, {
+            "state": "closed", "title": "session closed", "sessionId": "claude:s3",
+        }, self.cfg)
+        self.assertNotIn("claude:s3", state["agentSessions"])
+        snapshot = sessions.build_sessions(state, now)
+        self.assertNotIn("claude:s3", [session["id"] for session in snapshot["sessions"]])
+
+        self._write_claude("-tmp-demo3", "uuid-s3", rows + [{
+            "type": "assistant", "sessionId": "s3", "cwd": "/tmp/demo3", "timestamp": now + 30,
+            "message": {"role": "assistant", "content": [{"type": "text", "text": "tail flush"}]},
+        }], now + 30)
+        flushed = sessions.build_sessions(state, now + 30)
+        self.assertNotIn("claude:s3", [session["id"] for session in flushed["sessions"]])
+
+        events.apply_event(state, {
+            "state": "started", "title": "session resumed", "sessionId": "claude:s3", "app": "Claude Code",
+        }, self.cfg)
+        reopened = sessions.build_sessions(state, now + 31)
+        session = next(s for s in reopened["sessions"] if s["id"] == "claude:s3")
+        self.assertEqual(session["source"], "hook")
+        self.assertEqual(session["state"], "running")
+
+    def test_waiting_falls_back_and_stale_log_disappears_without_close_hook(self) -> None:
+        import time
+        from rinq import sessions
+
+        now = int(time.time())
+        rows = [{
+            "type": "assistant", "sessionId": "s4", "cwd": "/tmp/demo4", "timestamp": now - 300,
+            "message": {"model": "claude-x", "content": [
+                {"type": "tool_use", "name": "Read", "input": {"path": "README.md"}},
+            ]},
+        }]
+        self._write_claude("-tmp-demo4", "uuid-s4", rows, now - 300)
+        snapshot = sessions.build_sessions({}, now)
+        session = next(s for s in snapshot["sessions"] if s["id"] == "claude:s4")
+        self.assertEqual(session["state"], "waiting")
+
+        stale = sessions.build_sessions({}, now + 301)
+        self.assertNotIn("claude:s4", [session["id"] for session in stale["sessions"]])
+
+    def test_hook_overlay_does_not_persist_message_text(self) -> None:
+        import time
+        from rinq import sessions
+
+        now = int(time.time())
+        state = state_mod.blank_state()
+        events.apply_event(state, {
+            "state": "waiting",
+            "title": "user secret prompt",
+            "detail": "assistant secret output",
+            "sessionId": "claude:s5",
+            "app": "Claude Code",
+            "cwd": "/tmp/demo5",
+        }, self.cfg)
+
+        self.assertNotIn("title", state["agentSessions"]["claude:s5"])
+        self.assertNotIn("detail", state["agentSessions"]["claude:s5"])
+        self.assertEqual(state["agents"]["lastEvent"]["title"], "Claude Code waiting")
+
+        snapshot = sessions.build_sessions(state, now)
+        session = next(s for s in snapshot["sessions"] if s["id"] == "claude:s5")
+        self.assertEqual(session["summary"], "waiting for approval")
+
+    def test_closed_tombstone_ignores_late_waiting_event(self) -> None:
+        import time
+        from rinq import sessions
+
+        now = int(time.time())
+        state = state_mod.blank_state()
+        events.apply_event(state, {
+            "state": "closed", "title": "session closed", "sessionId": "claude:s7", "app": "Claude Code",
+        }, self.cfg)
+        events.apply_event(state, {
+            "state": "waiting", "title": "late waiting", "sessionId": "claude:s7", "app": "Claude Code",
+        }, self.cfg)
+
+        self.assertNotIn("claude:s7", state["agentSessions"])
+        snapshot = sessions.build_sessions(state, now)
+        self.assertNotIn("claude:s7", [session["id"] for session in snapshot["sessions"]])
+
+    def test_multiple_subagent_hooks_count_down_per_session(self) -> None:
+        import time
+        from rinq import sessions
+
+        now = int(time.time())
+        state = state_mod.blank_state()
+        events.apply_event(state, {
+            "state": "subagents_running", "title": "subagent 1", "sessionId": "claude:s6", "app": "Claude Code",
+        }, self.cfg)
+        events.apply_event(state, {
+            "state": "subagents_running", "title": "subagent 2", "sessionId": "claude:s6", "app": "Claude Code",
+        }, self.cfg)
+        events.apply_event(state, {
+            "state": "running", "title": "subagent stopped", "sessionId": "claude:s6", "app": "Claude Code",
+        }, self.cfg)
+
+        snapshot = sessions.build_sessions(state, now)
+        session = next(s for s in snapshot["sessions"] if s["id"] == "claude:s6")
+        self.assertEqual(session["state"], "subagents_running")
+        self.assertEqual(session["subagentCount"], 1)
+
+        events.apply_event(state, {
+            "state": "running", "title": "all stopped", "sessionId": "claude:s6", "app": "Claude Code",
+        }, self.cfg)
+        settled = sessions.build_sessions(state, now + 1)
+        session = next(s for s in settled["sessions"] if s["id"] == "claude:s6")
+        self.assertEqual(session["state"], "running")
+        self.assertEqual(session["subagentCount"], 0)
+
+    def test_tail_reads_latest_80_entries_and_honors_terminal_end(self) -> None:
+        import time
+        from rinq import sessions
+
+        now = int(time.time())
+        rows = [{
+            "type": "user", "sessionId": "s8", "cwd": "/tmp/demo8", "timestamp": now - 200,
+            "message": {"role": "user", "content": [{"type": "text", "text": "start"}]},
+        }, {
+            "type": "assistant", "sessionId": "s8", "cwd": "/tmp/demo8", "timestamp": now - 199,
+            "message": {"model": "claude-x", "content": [
+                {"type": "text", "text": "running early tool"},
+                {"type": "tool_use", "name": "Bash", "input": {"command": "sleep 1"}},
+            ]},
+        }]
+        for index in range(2, 88):
+            rows.append({
+                "type": "assistant", "sessionId": "s8", "cwd": "/tmp/demo8", "timestamp": now - 200 + index,
+                "message": {"model": "claude-x", "content": [
+                    {"type": "text", "text": f"filler {index}"},
+                ]},
+            })
+        rows.append({
+            "type": "result", "sessionId": "s8", "cwd": "/tmp/demo8", "timestamp": now - 10,
+            "subtype": "success",
+        })
+        self._write_claude("-tmp-demo8", "uuid-s8", rows, now - 10)
+
+        snapshot = sessions.build_sessions({}, now)
+        self.assertNotIn("claude:s8", [session["id"] for session in snapshot["sessions"]])
 
 
 if __name__ == "__main__":

@@ -23,12 +23,13 @@ Rinq 包含两条相互独立的数据路径：
 
 | 能力 | 作用 |
 |---|---|
-| **额度圆环** | 以统一的 `used / total` 方向呈现订阅时间窗、消费金额和余额 |
+| **额度圆环** | 每条厂商横栏右侧显示独立圆环，以 `used / total` 呈现订阅时间窗、消费金额和余额 |
+| **Agent 会话** | 按 CLI 分组展示运行、子 Agent 运行、等待和空闲状态，以及项目、模型、路径和最近摘要 |
 | **可处理的告警** | 标记额度耗尽、低余额和短时快速消耗；点击告警后隐藏，直到该额度状态恢复 |
 | **本地用量** | 汇总每天和滚动一周的 input/output tokens，不保存 prompt 或响应正文 |
 | **逐日查看** | 悬停每日柱组，以保留一位小数的 K/M/B 单位显示当天 input/output |
 | **Apple 多端** | macOS 菜单栏、iPhone、iPad、Apple Watch、iOS 小组件和 watchOS complication 共享同一套圆环模型 |
-| **厂商控制** | 在本机管理凭据、厂商显示、参考总额和圆环顺序 |
+| **厂商控制** | 在本机管理凭据、连接状态、参考总额和圆环顺序 |
 
 ## 工作原理
 
@@ -71,9 +72,9 @@ cd rinq
 
 弹窗包含三个页面：
 
-- **Rings**：显示额度、重置时间窗和可点击消除的告警。
+- **Rings**：每个 provider 一条横栏、右侧独立圆环，显示重置时间窗和可点击消除的告警；横栏上方是本地 Agent 会话状态条（运行中、等待审批、空闲）。
 - **Usage**：显示今日、滚动一周、逐日 input/output 和分应用汇总。
-- **Providers**：管理本地凭据、厂商开关和拖拽排序。
+- **Providers**：管理本地凭据、自动激活状态和拖拽排序。
 
 弹窗底部的 footer 有一个 **Quit Rinq** 按钮，用于退出菜单栏应用。弹窗打开后若 10 秒内无交互会自动收起；在其中点击、滚动、按键或移动指针都会重置计时，存在活动告警时保持展开直到被确认。
 
@@ -100,7 +101,7 @@ daemon 默认监听 `127.0.0.1:7788`。主要本地接口为 `/status`、`/usage
 | 小米 MiMo | 暂不支持 | API Key |
 | Claude API | 暂不支持 | Admin API Key |
 
-没有可用凭据的厂商不会显示。余额类圆环使用配置中的 `balanceFull` 作为参考总额。GLM 的 Coding Plan Key 显示滚动的 5 小时和周请求限额，按量付费 Key 则回退为预付余额。Jina 显示其 Embeddings/Reranker/Reader/Search 共享 token 池；dashboard 主机由 `hosts.jina` 或 `JINA_DASHBOARD_HOST` 配置（默认 `embeddings-dashboard-api.jinaai.cn`，国际站用 `embeddings-dashboard-api.jina.ai`）。小米 MiMo 和 Claude API 暂无可用的实时额度接口，启用后显示明确的“暂不支持”卡片。ChatGPT/Codex 依赖非官方订阅接口，仅适用于自行构建或侧载的应用，不应进入 App Store 构建。
+保存 API key 或检测到受支持的账户后，厂商自动激活，无需额外开关。没有可用凭据的厂商不会显示。余额类圆环使用配置中的 `balanceFull` 作为参考总额。GLM 的 Coding Plan Key 显示滚动的 5 小时和周请求限额，按量付费 Key 则回退为预付余额。Jina 显示其 Embeddings/Reranker/Reader/Search 共享 token 池；dashboard 主机由 `hosts.jina` 或 `JINA_DASHBOARD_HOST` 配置（默认 `embeddings-dashboard-api.jinaai.cn`，国际站用 `embeddings-dashboard-api.jina.ai`）。小米 MiMo 和 Claude API 暂无可用的实时额度接口，存在凭据时显示明确的“暂不支持”卡片。ChatGPT/Codex 依赖非官方订阅接口，仅适用于自行构建或侧载的应用，不应进入 App Store 构建。
 
 ## 本地 token 用量
 
@@ -112,8 +113,23 @@ macOS Usage 页面读取原生本地 Agent 产生的结构化 token 计数。它
 - TraeX：`~/.trae/cli/sessions`
 - Claude Code：`~/.claude/projects`
 - OMP / oh-my-pi：`~/.omp/agent/sessions`
+- Pi：`~/.pi/agent/sessions`
 
-Rinq 支持 `CODEX_HOME`、`TRAE_HOME`、`TRAECLI_HOME`、`CLAUDE_CONFIG_DIR`、`ZCODE_HOME` 和 OMP 的 `PI_CODING_AGENT_DIR`。如果受支持的 Agent 将 JSONL 日志存放在其他目录，可配置 `usage.extraSources`。增量索引位于 `~/.rinq/usage.sqlite3`，默认查看最近 7 天。
+Rinq 支持 `CODEX_HOME`、`TRAE_HOME`、`TRAECLI_HOME`、`CLAUDE_CONFIG_DIR`、`ZCODE_HOME`、OMP 的 `PI_CODING_AGENT_DIR` 和 Pi 的 `PI_AGENT_DIR`。如果受支持的 Agent 将 JSONL 日志存放在其他目录，可配置 `usage.extraSources`。增量索引位于 `~/.rinq/usage.sqlite3`，默认查看最近 7 天。
+
+## 实时 Agent 会话
+
+Rings 页面和网页 dashboard 顶部展示 Claude Code、Codex、TraeX、OMP、Pi 仍打开的终端会话。会话先按 CLI 分组，再按运行中、子 Agent 运行中、等待审批、空闲排序；每行显示项目、模型、工作目录、最近摘要和更新时间。收到 `SessionEnd` 后会话自动消失；没有关闭 hook 时，空闲或等待活动最多保留 10 分钟，运行中的 shell 和子 Agent 有 15 分钟宽限期；这时依据日志推断可见性，不检查终端进程。数据由 `GET /sessions` 提供，只在内存中从日志尾部重建，Rinq 不持久化任何 prompt 或助手回复（见[状态契约](schema/status.md#local-agent-sessions)）。
+
+不装 hook 时，状态依据日志活动（未闭合的工具调用、回合结束、错误）和短宽限时间推断。Claude Code 和 TraeX 的通知 hook 可直接上报等待状态；Codex notify 只上报回合完成，其余状态仍依据日志推断：
+
+| Agent | Hook 文件 | 安装位置 |
+|---|---|---|
+| Claude Code | [hooks/claude.settings.snippet.json](hooks/claude.settings.snippet.json) | 合并到 `~/.claude/settings.json` |
+| Codex CLI | [hooks/codex.notify.toml.snippet](hooks/codex.notify.toml.snippet) | 将 `notify` 行加入 `~/.codex/config.toml` |
+| TraeX | [hooks/traex.hooks.json](hooks/traex.hooks.json) | TraeX hooks 配置 |
+
+Hook 只向本机 daemon 发送事件，只持久化生命周期状态和安全元数据，不保存 prompt、回复、title 或 detail 文本。`SessionEnd` 会清除打开会话。原生弹窗和网页面板每 2 秒独立刷新会话，日志扫描缓存 5 秒，hook 事件会立即使缓存失效。也可以手动记录：`rinq push --state waiting --title "review needed" --session-id claude:abc --cwd ~/code/x`。
 
 集成能力按证据分级：ZCode 当前可以读取本地 OAuth/套餐状态和结构化 token 用量，但套餐 entitlement 本身不能作为已用/剩余额度圆环；MiMo Code/Desktop 和 Trae CN 可以检测安装状态，个人订阅余额在厂商提供稳定官方接口前保持 `unknown`。Copilot、Cursor、Windsurf、Gemini Code Assist、Zed、Cline、Roo Code 和 Kilo Code 也遵循同一规则，不从套餐价格、网页文字、浏览器 Cookie 或未公开接口推断实时剩余额度。
 

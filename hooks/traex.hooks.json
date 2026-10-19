@@ -38,6 +38,18 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.local/bin/rinq hook-traex",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      }
     ]
   }
 }

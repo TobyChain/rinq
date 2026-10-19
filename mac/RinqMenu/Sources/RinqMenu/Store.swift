@@ -5,12 +5,14 @@ final class Store: ObservableObject {
     @Published var status: Status?
     @Published var settings: SettingsInfo?
     @Published var usage: UsageSummary?
+    @Published var sessions: SessionSnapshot?
     @Published var alerts: [QuotaAlert] = []
     @Published var drafts: [String: String] = [:]
     @Published var saving = false
 
     let port: Int
     private var alertMonitor: QuotaAlertMonitor
+    private var refreshingSessions = false
     private var base: String { "http://127.0.0.1:\(port)" }
 
     init(
@@ -26,27 +28,30 @@ final class Store: ObservableObject {
         async let s: Status? = fetch("/status")
         async let c: SettingsInfo? = fetch("/config")
         async let u: UsageSummary? = fetch("/usage")
+        async let sess: Void = refreshSessions()
         let fetchedStatus = await s
         status = fetchedStatus
         settings = await c
         usage = await u
+        await sess
         guard let fetchedStatus else { return false }
         let evaluation = alertMonitor.evaluate(rings: fetchedStatus.rings)
         alerts = evaluation.active
         return evaluation.shouldPresent
     }
 
+    /// Publish local activity independently of slow provider quota requests.
+    func refreshSessions() async {
+        guard !refreshingSessions else { return }
+        refreshingSessions = true
+        defer { refreshingSessions = false }
+        let snapshot: SessionSnapshot? = await fetch("/sessions", timeout: 5)
+        if !Task.isCancelled { sessions = snapshot }
+    }
+
     func keyDraft(_ id: String) -> String { drafts[id] ?? "" }
 
     func setDraft(_ id: String, _ v: String) { drafts[id] = v }
-
-    func toggle(_ vendor: VendorInfo) async {
-        await patch([
-            "enabled": Dictionary(uniqueKeysWithValues: settings!.vendors.map {
-                ($0.id, $0.id == vendor.id ? !$0.enabled : $0.enabled)
-            })
-        ])
-    }
 
     func saveKey(_ id: String) async {
         let key = (drafts[id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -109,10 +114,12 @@ final class Store: ObservableObject {
         status = await fetch("/status")
     }
 
-    private func fetch<T: Decodable>(_ path: String) async -> T? {
+    private func fetch<T: Decodable>(_ path: String, timeout: TimeInterval = 60) async -> T? {
         guard let url = URL(string: "\(base)\(path)") else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = timeout
         do {
-            let (data, resp) = try await URLSession.shared.data(from: url)
+            let (data, resp) = try await URLSession.shared.data(for: request)
             guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else { return nil }
             return try? JSONDecoder().decode(T.self, from: data)
         } catch { return nil }

@@ -2,7 +2,7 @@
 
 Served by the Mac daemon so you can check quota from any browser (iPhone,
 iPad, another machine) with no app install and no code signing. Pure static
-HTML/JS/CSS; it polls /status every 60s.
+HTML/JS/CSS; it polls /status and /sessions.
 """
 
 HTML = """<!doctype html>
@@ -18,19 +18,32 @@ HTML = """<!doctype html>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body { margin:0; background:#000; color:#fff; font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif; }
   .wrap { max-width: 520px; margin: 0 auto; padding: max(env(safe-area-inset-top),20px) 18px 40px; }
-  h1 { font-size: 34px; font-weight: 800; letter-spacing: -0.02em; margin: 4px 0 18px; }
-  .rings { position: relative; width: 260px; height: 260px; margin: 6px auto 22px; }
-  .rings svg { transform: rotate(-90deg); }
-  .rings .center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-  .rings .center b { font-size: 30px; font-weight: 800; }
-  .rings .center span { font-size: 12px; color:#9aa0a6; margin-top:2px; }
-  .bar { margin: 0 0 18px; }
-  .bar .top { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
-  .bar .label { font-size: 16px; font-weight: 600; }
-  .bar .val { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .bar .track { height: 10px; border-radius: 6px; background: rgba(255,255,255,.08); overflow:hidden; }
-  .bar .fill { height:100%; border-radius:6px; transition: width .6s ease; }
-  .bar .sub { font-size: 12px; color:#9aa0a6; margin-top:5px; }
+  h1 { font-size: 34px; font-weight: 800; letter-spacing: -0.02em; margin: 4px 0 16px; }
+  .agents { display:none; gap:8px; flex-direction:column; margin: 0 0 18px; padding: 12px;
+            background: rgba(255,255,255,.06); border-radius: 12px; }
+  .agents.on { display:flex; }
+  .agents .counts { display:flex; gap:10px; flex:none; font-size:12px; font-weight:700;
+                    font-variant-numeric: tabular-nums; }
+  .agents .counts span { display:flex; gap:4px; align-items:center; }
+  .agents .dot { width:7px; height:7px; border-radius:50%; }
+  .agents .chips { display:flex; flex-direction:column; gap:6px; max-height:380px; overflow-y:auto; width:100%; }
+  .chip { flex:none; display:flex; flex-direction:column; gap:5px; padding:9px; border-radius:8px;
+          background: rgba(255,255,255,.08); font-size:11px; min-width:0; }
+  .chip .heading { display:flex; gap:6px; align-items:center; }
+  .chip .heading small { margin-left:auto; }
+  .chip .summary, .chip .meta { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .chip .meta { color:#9aa0a6; font-size:10px; }
+  .chip b { font-size:9px; letter-spacing:.04em; color:#9aa0a6; }
+  .chip small { color:#9aa0a6; font-size:9px; }
+  .bar { display:flex; align-items:center; gap:12px; margin: 0 0 14px; }
+  .bar .info { flex:1; min-width:0; }
+  .bar .label { font-size:16px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bar .val { font-size:13px; font-weight:700; font-variant-numeric: tabular-nums; margin-top:2px; }
+  .bar .sub { font-size:12px; color:#9aa0a6; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mini { flex:none; position:relative; width:48px; height:48px; }
+  .mini svg { transform: rotate(-90deg); }
+  .mini .pct { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+               font-size:10px; font-weight:800; font-variant-numeric: tabular-nums; }
   .updated { text-align:center; color:#777; font-size:12px; margin-top:8px; }
   .err { text-align:center; color:#ff6b6b; font-size:13px; margin-top:8px; display:none; }
 </style>
@@ -38,9 +51,9 @@ HTML = """<!doctype html>
 <body>
 <div class="wrap">
   <h1>Rinq</h1>
-  <div class="rings">
-    <svg width="260" height="260" viewBox="0 0 260 260" id="rings"></svg>
-    <div class="center"><b id="head">–</b><span id="headsub">rings</span></div>
+  <div class="agents" id="agents">
+    <div class="counts" id="counts"></div>
+    <div class="chips" id="chips"></div>
   </div>
   <div id="bars"></div>
   <div class="updated" id="updated"></div>
@@ -48,18 +61,13 @@ HTML = """<!doctype html>
 </div>
 <script>
 const COLORS = { blue:'#0a84ff', indigo:'#5e5ce6', green:'#30d158', orange:'#ff9f0a', red:'#ff453a', purple:'#bf5af2', teal:'#64d2ff' };
+const STATE_COLORS = { running:'#0a84ff', subagents_running:'#bf5af2', waiting:'#ff9f0a', failed:'#ff453a', completed:'#30d158', idle:'#8e8e93' };
+const STATE_LABELS = { running:'running', subagents_running:'subagents running', waiting:'waiting', idle:'idling' };
+const APP_SHORT = { claude_code:'CC', codex:'CX', traex:'TR', omp:'OMP', pi:'PI' };
 function col(a){ return COLORS[a] || COLORS.blue; }
-function pctOf(r){ return r.usedPercent; }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function sym(r){ return r.currency==='USD' ? '$' : '¥'; }
 function amount(r){ return (r.remaining!=null) ? (sym(r)+Number(r.remaining).toFixed(2)) : null; }
-// Unknown only when neither a percentage nor an absolute amount is available.
-function unknown(r){ return pctOf(r)==null && !amount(r); }
-function arc(radius, pct, color, width){
-  const c=2*Math.PI*radius, dash=c*Math.max(0,Math.min(100,pct||0))/100;
-  return `<circle cx="130" cy="130" r="${radius}" fill="none" stroke="${color}" stroke-opacity="0.18" stroke-width="${width}"/>
-          <circle cx="130" cy="130" r="${radius}" fill="none" stroke="${color}" stroke-width="${width}"
-            stroke-linecap="round" stroke-dasharray="${dash} ${c}"/>`;
-}
 function resetText(r){
   if(r.resetsAt){
     const s=r.resetsAt - Math.floor(Date.now()/1000);
@@ -69,7 +77,7 @@ function resetText(r){
     if(m>=60) return 'resets in '+Math.floor(m/60)+'h '+(m%60)+'m';
     return 'resets in '+m+'m';
   }
-  return (r.usedPercent??0)+'%';
+  return '';
 }
 function formatValue(value, unit){
   const n = Number(value);
@@ -79,51 +87,88 @@ function formatValue(value, unit){
   if(unit==='percent') return text+'%';
   return text;
 }
-function usageText(r){
+// The ring carries the percentage; the row text shows only used / total.
+function rowValue(r){
+  if(r.status==='quota_unavailable') return 'Unavailable';
+  if(r.status==='quota_unsupported') return 'Not supported';
+  if(r.status==='not_connected') return 'Not connected';
   if(r.usedValue!=null && r.totalValue!=null){
-    const base = formatValue(r.usedValue,r.valueUnit)+' / '+formatValue(r.totalValue,r.valueUnit);
-    return (r.valueUnit==='percent' || r.usedPercent==null) ? base : base+' · '+r.usedPercent+'%';
+    return formatValue(r.usedValue,r.valueUnit)+' / '+formatValue(r.totalValue,r.valueUnit);
   }
-  return (r.usedPercent??0)+'% / 100%';
+  return amount(r) || '--';
 }
-async function load(){
-  try{
-    const res = await fetch('status', {cache:'no-store'});
-    const d = await res.json();
-    document.getElementById('err').style.display='none';
-    draw(d.rings||[]);
-    bars(d.rings||[]);
-    const t=d.updatedAt? new Date(d.updatedAt*1000) : null;
-    document.getElementById('updated').textContent = t? ('updated '+t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})) : '';
-  }catch(e){ document.getElementById('err').style.display='block'; }
-}
-function draw(rings){
-  const top = rings.slice(0,3);
-  const W=13, gap=12, base=118;
-  document.getElementById('rings').innerHTML = top.map((r,i)=>{
-    const rad = base - i*(W+gap);
-    const p = pctOf(r);
-    return arc(rad, (p==null?0:p), (p==null&&!amount(r))?'#888':col(r.accent), W);
-  }).join('');
-  document.getElementById('head').textContent = top.length? top.length : '–';
+function miniRing(r){
+  const p = r.usedPercent;
+  const hasPct = (p!=null);
+  const c = (!hasPct && !amount(r)) ? '#888' : col(r.accent);
+  const R=19, W=5, cLen=2*Math.PI*R, dash=cLen*Math.max(0,Math.min(100,hasPct?p:0))/100;
+  return `<div class="mini">
+    <svg width="48" height="48" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="${R}" fill="none" stroke="${c}" stroke-opacity="0.18" stroke-width="${W}"/>
+      <circle cx="24" cy="24" r="${R}" fill="none" stroke="${c}" stroke-width="${W}"
+        stroke-linecap="round" stroke-dasharray="${dash} ${cLen}"/>
+    </svg>
+    <span class="pct" style="color:${c}">${hasPct?p:'–'}</span>
+  </div>`;
 }
 function bars(rings){
   document.getElementById('bars').innerHTML = rings.map(r=>{
-    const p = pctOf(r);
-    const hasPct = (p!=null);
-    const amt = amount(r);
-    const v = hasPct ? usageText(r) : (amt || '--');
-    const dead = !hasPct && !amt;
+    const hasPct = (r.usedPercent!=null);
+    const dead = !hasPct && !amount(r);
     const c = dead ? '#888' : col(r.accent);
+    const sub = resetText(r) || r.statusDetail || (dead ? 'no data — add a key' : '');
     return `<div class="bar">
-      <div class="top"><span class="label">${r.label}</span><span class="val" style="color:${c}">${v}</span></div>
-      <div class="track"><div class="fill" style="width:${hasPct?p:0}%;background:${c}"></div></div>
-      <div class="sub">${dead?'no data — add a key':resetText(r)}</div>
+      <div class="info">
+        <div class="label">${esc(r.label)}</div>
+        <div class="val" style="color:${c}">${esc(rowValue(r))}</div>
+        <div class="sub">${esc(sub)}</div>
+      </div>
+      ${miniRing(r)}
     </div>`;
   }).join('');
 }
+function agents(d){
+  const box = document.getElementById('agents');
+  const sessions = ((d && d.sessions) || []).filter(s=>s.isOpen===true);
+  if(!sessions.length){ box.classList.remove('on'); return; }
+  const counts = d.counts || {};
+  const parts = [];
+  if(counts.running>0) parts.push(`<span><i class="dot" style="background:${STATE_COLORS.running}"></i>${counts.running} run</span>`);
+  if(counts.subagentsRunning>0) parts.push(`<span><i class="dot" style="background:${STATE_COLORS.subagents_running}"></i>${counts.subagentsRunning} sub</span>`);
+  if(counts.waiting>0) parts.push(`<span><i class="dot" style="background:${STATE_COLORS.waiting}"></i>${counts.waiting} wait</span>`);
+  if(counts.idle>0) parts.push(`<span><i class="dot" style="background:${STATE_COLORS.idle}"></i>${counts.idle} idle</span>`);
+  document.getElementById('counts').innerHTML = parts.join('');
+  document.getElementById('chips').innerHTML = sessions.slice(0,12).map(s=>{
+    const c = STATE_COLORS[s.state] || STATE_COLORS.idle;
+    const tip = esc((s.summary||'') + ' · ' + (STATE_LABELS[s.state] || s.state));
+    const meta = [s.model, s.cwd, s.updatedAt ? new Date(s.updatedAt*1000).toLocaleTimeString() : null].filter(Boolean).join(' · ');
+    return `<div class="chip" title="${tip}"><div class="heading"><i class="dot" style="background:${c}"></i>`+
+           `<b>${esc(s.app||APP_SHORT[s.adapter]||'Agent')}</b>${esc(s.project||'')} <small>${esc(STATE_LABELS[s.state]||s.state)}</small></div>`+
+           `<div class="summary">${esc(s.summary||'')}</div><div class="meta" title="${esc(meta)}">${esc(meta)}</div></div>`;
+  }).join('');
+  box.classList.add('on');
+}
+async function load(){
+  try{
+    const sr = await fetch('status', {cache:'no-store'}).then(r=>r.ok ? r.json() : null).catch(()=>null);
+    document.getElementById('err').style.display = sr ? 'none' : 'block';
+    if(sr){
+      bars(sr.rings||[]);
+      const t=sr.updatedAt? new Date(sr.updatedAt*1000) : null;
+      document.getElementById('updated').textContent = t? ('updated '+t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})) : '';
+    }
+  }catch(e){ document.getElementById('err').style.display='block'; }
+  finally { setTimeout(load, 15000); }
+}
+async function loadSessions(){
+  try {
+    const snapshot = await fetch('sessions', {cache:'no-store'}).then(r=>r.ok ? r.json() : null);
+    agents(snapshot);
+  } catch(e) { agents(null); }
+  finally { setTimeout(loadSessions, 2000); }
+}
 load();
-setInterval(load, 60000);
+loadSessions();
 </script>
 </body>
 </html>

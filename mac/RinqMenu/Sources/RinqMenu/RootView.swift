@@ -48,8 +48,18 @@ struct RootView: View {
         return PopoverLayout.make(
             rings: rings,
             visibleScreenSize: visibleScreenSize,
-            hasAlerts: alertLayoutState.reservesAlertSpace
+            hasAlerts: alertLayoutState.reservesAlertSpace,
+            showsAgentStrip: hasAgentSessions,
+            agentSessionCount: openSessionCount
         )
+    }
+
+    private var hasAgentSessions: Bool {
+        openSessionCount > 0
+    }
+
+    private var openSessionCount: Int {
+        store.sessions?.sessions.filter { $0.isOpen == true }.count ?? 0
     }
 
     var body: some View {

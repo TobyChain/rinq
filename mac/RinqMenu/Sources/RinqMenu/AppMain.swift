@@ -4,7 +4,7 @@ import SwiftUI
 // RinqMenu: a menu-bar item showing the configured quota rings. Hovering the
 // item opens a native SwiftUI popover preview immediately; clicking pins it.
 // The popover shows the dashboard and a Settings tab for adding provider keys,
-// toggling vendors, and managing ring order. Data comes from the rinq daemon
+// viewing connection state, and managing ring order. Data comes from the rinq daemon
 // (http://127.0.0.1:<port>).
 @MainActor
 final class AppDelegate: NSResponder, NSApplicationDelegate, NSPopoverDelegate {
@@ -12,6 +12,7 @@ final class AppDelegate: NSResponder, NSApplicationDelegate, NSPopoverDelegate {
     private var popover: NSPopover?
     private var store: Store!
     private var timer: Timer?
+    private var sessionRefreshTask: Task<Void, Never>?
     private var idleCloseWorkItem: DispatchWorkItem?
     private var popoverEventMonitor: Any?
     private var hoverCloseWorkItem: DispatchWorkItem?
@@ -69,7 +70,9 @@ final class AppDelegate: NSResponder, NSApplicationDelegate, NSPopoverDelegate {
         let initialLayout = PopoverLayout.make(
             rings: store.status?.rings ?? [],
             visibleScreenSize: screenSize,
-            hasAlerts: !store.alerts.isEmpty
+            hasAlerts: !store.alerts.isEmpty,
+            showsAgentStrip: !(store.sessions?.sessions.filter { $0.isOpen == true } ?? []).isEmpty,
+            agentSessionCount: store.sessions?.sessions.filter { $0.isOpen == true }.count ?? 0
         )
         let root = NSHostingController(rootView: RootView(
             store: store,
@@ -105,6 +108,15 @@ final class AppDelegate: NSResponder, NSApplicationDelegate, NSPopoverDelegate {
             }
         }
         startIdleAutoClose()
+        sessionRefreshTask?.cancel()
+        sessionRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                await self.store.refreshSessions()
+                do { try await Task.sleep(nanoseconds: 2_000_000_000) }
+                catch { return }
+            }
+        }
         Task {
             _ = await store.refresh()
             render(rings: store.status?.rings ?? [], alerts: store.alerts)
@@ -228,6 +240,8 @@ final class AppDelegate: NSResponder, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
+        sessionRefreshTask?.cancel()
+        sessionRefreshTask = nil
         cancelIdleAutoClose()
         hoverCloseWorkItem?.cancel()
         hoverCloseWorkItem = nil
