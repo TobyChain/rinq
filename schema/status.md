@@ -206,8 +206,11 @@ infer live remaining quota from plan pricing, UI text, browser cookies, or an
 undocumented endpoint.
 
 `POST /auth/connect` accepts `{"integrationId": "zcode"}` from localhost and
-opens the vendor's official connection page. It does not accept passwords or
-tokens. Rinq does not read browser cookies or encrypted credential values.
+opens the vendor's official page in the default browser. It is a convenience
+link, not an authentication step: Rinq cannot sign a local CLI or IDE in, so the
+macOS UI labels the action "Open vendor page" rather than implying a connection.
+The endpoint accepts no passwords or tokens, and Rinq does not read browser
+cookies or encrypted credential values.
 
 ## Vendors and credentials
 

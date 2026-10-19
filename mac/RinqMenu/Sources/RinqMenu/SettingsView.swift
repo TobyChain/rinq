@@ -157,10 +157,11 @@ private struct IntegrationRow: View {
                 }
                 Spacer(minLength: 6)
                 if integration.installed || integration.configured {
-                    Button(integration.authState == "connected" ? "Open account" : "Connect account") {
-                        Task { await store.connect(integration) }
+                    Button("Open vendor page") {
+                        Task { await store.openVendorPage(integration) }
                     }
                     .controlSize(.small)
+                    .help("Opens this vendor's official page in your browser. Rinq never signs in to the local app for you.")
                 }
                 Toggle("", isOn: monitored)
                     .labelsHidden()

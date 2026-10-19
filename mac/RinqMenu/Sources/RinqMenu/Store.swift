@@ -83,7 +83,8 @@ final class Store: ObservableObject {
         }
     }
 
-    func connect(_ integration: IntegrationInfo) async {
+    /// Open the vendor's official page. This never signs in to a local app.
+    func openVendorPage(_ integration: IntegrationInfo) async {
         guard let url = URL(string: "\(base)/auth/connect"),
               let data = try? JSONSerialization.data(withJSONObject: ["integrationId": integration.id]) else { return }
         var request = URLRequest(url: url)
