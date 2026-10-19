@@ -228,8 +228,7 @@ struct ProviderRow: View {
     }
 
     private var statusIcon: String {
-        if vendor.tracking { return "checkmark.circle.fill" }
-        return vendor.hasCredential ? "pause.circle.fill" : "circle"
+        vendor.tracking ? "checkmark.circle.fill" : "circle"
     }
 
     private var hint: String {
