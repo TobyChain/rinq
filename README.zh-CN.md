@@ -131,7 +131,7 @@ Rings 页面和网页 dashboard 顶部展示 Claude Code、Codex、TraeX、OMP�
 
 Hook 只向本机 daemon 发送事件，只持久化生命周期状态和安全元数据，不保存 prompt、回复、title 或 detail 文本。`SessionEnd` 会清除打开会话。原生弹窗和网页面板每 2 秒独立刷新会话，日志扫描缓存 5 秒，hook 事件会立即使缓存失效。也可以手动记录：`rinq push --state waiting --title "review needed" --session-id claude:abc --cwd ~/code/x`。
 
-Providers 页面列出检测到的 IDE，这一栏只管本地用量监控，与上面的厂商额度监控是两件事：Rinq 能索引该 IDE 的本地结构化日志时显示 **usage tracked**，每行带一个开关，右上角的 **Refresh** 按钮会重新扫描本机。关闭开关后 Rinq 不再探测该 IDE，不读取它的任何文件，行会压缩成一行身份信息，重新打开即可恢复。行内的 **Open vendor page** 只是在浏览器打开厂商页面，不是登录步骤，Rinq 无法替本地 CLI 或 IDE 登录。集成能力按证据分级：ZCode 当前可以读取本地 OAuth/套餐状态和结构化 token 用量，但套餐 entitlement 本身不能作为已用/剩余额度圆环；MiMo Code/Desktop 和 Trae CN 可以检测安装状态，个人订阅余额在厂商提供稳定官方接口前保持 `unknown`。Copilot、Cursor、Windsurf、Gemini Code Assist、Zed、Cline、Roo Code 和 Kilo Code 也遵循同一规则，不从套餐价格、网页文字、浏览器 Cookie 或未公开接口推断实时剩余额度。
+Providers 页面列出检测到的 IDE，这一栏只管本地用量监控，与上面的厂商额度监控是两件事：Rinq 能索引该 IDE 的本地结构化日志时显示 **usage tracked**，每行带一个开关，右上角的 **Refresh** 按钮会重新扫描本机。关闭开关后 Rinq 不再探测该 IDE，不读取它的任何文件，行会压缩成一行身份信息，重新打开即可恢复。Rinq 无法替本地 CLI 或 IDE 登录，因此不提供跳转按钮。集成能力按证据分级：ZCode 当前可以读取本地 OAuth/套餐状态和结构化 token 用量，但套餐 entitlement 本身不能作为已用/剩余额度圆环；MiMo Code/Desktop 和 Trae CN 可以检测安装状态，个人订阅余额在厂商提供稳定官方接口前保持 `unknown`。Copilot、Cursor、Windsurf、Gemini Code Assist、Zed、Cline、Roo Code 和 Kilo Code 也遵循同一规则，不从套餐价格、网页文字、浏览器 Cookie 或未公开接口推断实时剩余额度。
 
 ## 配置
 

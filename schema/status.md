@@ -215,10 +215,10 @@ undocumented endpoint.
 
 `POST /auth/connect` accepts `{"integrationId": "zcode"}` from localhost and
 opens the vendor's official page in the default browser. It is a convenience
-link, not an authentication step: Rinq cannot sign a local CLI or IDE in, so the
-macOS UI labels the action "Open vendor page" rather than implying a connection.
-The endpoint accepts no passwords or tokens, and Rinq does not read browser
-cookies or encrypted credential values.
+link, not an authentication step: Rinq cannot sign a local CLI or IDE in. The
+macOS UI no longer exposes it, so the endpoint and the `connectURL` field remain
+for other local consumers only. The endpoint accepts no passwords or tokens, and
+Rinq does not read browser cookies or encrypted credential values.
 
 ## Vendors and credentials
 
