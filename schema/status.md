@@ -179,7 +179,10 @@ entitlement state, and whether structured local usage logs were found.
 `authState` and `planState` are populated only for integrations whose local
 metadata Rinq parses; every other integration reports `unknown` because Rinq
 reads no account data for it. Consumers should treat `unknown` as "not
-reported" and omit it rather than presenting it as a problem state.
+reported" and omit it rather than presenting it as a problem state. The macOS
+Providers tab shows local usage monitoring only and renders just
+`usageAvailable`; account, entitlement, and quota fields stay in the API for
+other consumers.
 
 Each entry carries `monitored`. `POST /config` accepts
 `{"monitored": {"<integration id>": false}}` to cancel monitoring and

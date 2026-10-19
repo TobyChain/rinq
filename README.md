@@ -30,7 +30,7 @@ Rinq has two independent data paths:
 | **Daily inspection** | Hovering a day shows its input and output counts in one-decimal K/M/B units |
 | **Apple surfaces** | macOS menu bar, iPhone, iPad, Apple Watch, iOS widget, and watchOS complication share the same ring model |
 | **Provider controls** | Credentials, connection state, per-vendor tracking cancellation, reference totals, and ring order are managed locally |
-| **IDE integrations** | Detect installed/running coding IDEs, local account state, and structured local usage, with per-IDE monitoring and a manual rescan |
+| **IDE integrations** | Detect installed coding IDEs and monitor their structured local usage, with a per-IDE switch and a manual rescan |
 
 ## How It Works
 
@@ -135,7 +135,7 @@ State is inferred from transcript activity (open tool calls, turn completion, er
 
 Hooks POST to the local daemon only. Only lifecycle state and safe metadata are persisted; prompt, reply, title and detail text are excluded. Hooks overlay log-derived state for a few minutes, and `SessionEnd` removes the session from the open list. The native popover and web panel refresh sessions independently every two seconds; log scans are cached for five seconds and hooks invalidate that cache. You can also record an event manually with `rinq push --state waiting --title "review needed" --session-id claude:abc --cwd ~/code/x`.
 
-The macOS Providers tab also detects installed and running coding IDEs such as ZCode, MiMo Code/Desktop, and Trae CN. It reports the IDE's non-secret login/entitlement state where the IDE exposes it locally, and its **Open vendor page** button opens the vendor's official page in your browser. That is a convenience link, not an authentication step: Rinq cannot sign a local CLI or IDE in. Rinq never asks for a vendor password, reads browser cookies, or copies encrypted client credentials into `~/.rinq/config.json`.
+The macOS Providers tab also lists detected coding IDEs. That section is about local usage monitoring only, which is separate from the provider quota monitoring above it: a row shows **usage tracked** when Rinq indexes the IDE's structured local logs, and its **Open vendor page** button opens the vendor's official page in your browser. That is a convenience link, not an authentication step, because Rinq cannot sign a local CLI or IDE in. Rinq never asks for a vendor password, reads browser cookies, or copies encrypted client credentials into `~/.rinq/config.json`.
 
 The Providers tab lists detected IDEs, each with a switch and a **Refresh** button that rescans this Mac. Switching an IDE off stops Rinq from probing it, so none of its files are read; its row shrinks to a single line and the switch turns it back on. Integration support is capability-aware. ZCode currently exposes local OAuth/plan metadata and structured token usage; its entitlement endpoint does not by itself provide a valid used/remaining ring. MiMo Code/Desktop and Trae CN are detected when installed, while their personal subscription balances remain `unknown` until a stable official usage interface is available. The same policy applies to Copilot, Cursor, Windsurf, Gemini Code Assist, Zed, Cline, Roo Code, and Kilo Code.
 

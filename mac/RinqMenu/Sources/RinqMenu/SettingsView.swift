@@ -178,27 +178,15 @@ private struct IntegrationRow: View {
     }
 
     /// A cancelled IDE is not probed, so only its identity row is shown.
+    /// This section manages local usage monitoring only; account, plan, and
+    /// quota state belong to the Providers section below.
     @ViewBuilder
     private var detailLines: some View {
-        HStack(spacing: 8) {
-            Text(integration.installed ? (integration.running ? "running" : "installed") : (integration.configured ? "configured" : "not installed"))
-            if integration.usageAvailable { Text("usage tracked") }
-            if let account = integration.accountSummary { Text(account) }
-        }
-        .font(.system(size: 9))
-        .foregroundStyle(.secondary)
-        .help(integration.accountSummary == nil
-              ? "Rinq indexes this IDE's local usage. The IDE does not expose account or plan state to Rinq."
-              : "Account state read from this IDE's local metadata.")
-        if integration.authState == "connected" && integration.quotaState != "available" {
-            Text("Account detected. This vendor does not expose a verified quota value to Rinq yet.")
+        if integration.usageAvailable {
+            Text("usage tracked")
                 .font(.system(size: 9))
                 .foregroundStyle(.secondary)
-        }
-        if let quotaSupport = integration.quotaSupport, quotaSupport != "verified" {
-            Text("quota support: \(quotaSupport)")
-                .font(.system(size: 9))
-                .foregroundStyle(.tertiary)
+                .help("Rinq indexes this IDE's structured local usage logs.")
         }
     }
 
