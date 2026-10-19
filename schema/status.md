@@ -176,6 +176,15 @@ JSON responses disable HTTP caching and do not allow cross-origin browser reads.
 configuration presence, running state, non-secret account status, subscription
 entitlement state, and whether structured local usage logs were found.
 
+Each entry carries `monitored`. `POST /config` accepts
+`{"monitored": {"<integration id>": false}}` to cancel monitoring and
+`true` to resume; cancellations are stored as the `integrationOff` list in
+`config.json`. A cancelled IDE is not probed at all, so Rinq reads none of its
+files, and its entry keeps only identity fields plus `monitored: false`. It
+stays in the array so the row can offer a resume action. Re-reading `/config`
+rescans the machine, which is what the Providers tab's IDE refresh button
+triggers.
+
 `planState=available` means that the client reports an active subscription or
 entitlement. `quotaState=available` is stricter: Rinq must have parsed a
 verified `usedValue`/`totalValue` or remaining balance before creating a ring.

@@ -72,15 +72,13 @@ struct SettingsView: View {
     @ObservedObject var store: Store
 
     private var detectedIntegrations: [IntegrationInfo] {
-        (store.settings?.integrations ?? []).filter {
-            $0.installed || $0.configured || $0.running || $0.usageAvailable
-        }
+        (store.settings?.integrations ?? []).filter(\.isListed)
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                GroupBox("Local coding IDEs") {
+                GroupBox {
                     VStack(alignment: .leading, spacing: 8) {
                         if !detectedIntegrations.isEmpty {
                             ForEach(detectedIntegrations) { integration in
@@ -94,6 +92,18 @@ struct SettingsView: View {
                         }
                     }
                     .padding(.vertical, 4)
+                } label: {
+                    HStack {
+                        Text("Local coding IDEs")
+                        Spacer()
+                        Button {
+                            Task { await store.refreshIntegrations() }
+                        } label: {
+                            Label("Refresh", systemImage: "arrow.clockwise")
+                        }
+                        .controlSize(.small)
+                        .help("Scan this Mac again for local coding IDEs")
+                    }
                 }
 
                 GroupBox("Providers") {
@@ -135,6 +145,32 @@ private struct IntegrationRow: View {
     let integration: IntegrationInfo
 
     var body: some View {
+        if integration.monitored {
+            monitoredBody
+        } else {
+            pausedBody
+        }
+    }
+
+    /// A cancelled IDE keeps one short row so monitoring can be resumed.
+    private var pausedBody: some View {
+        HStack(spacing: 8) {
+            Circle().fill(Color.secondary).frame(width: 8, height: 8)
+            Text(integration.label)
+                .font(.system(size: 12, weight: .medium))
+            Spacer()
+            Text("monitoring off")
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+            Button("Resume monitoring") {
+                Task { await store.setIntegrationMonitored(integration.id, true) }
+            }
+            .controlSize(.small)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var monitoredBody: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Circle()
@@ -154,6 +190,10 @@ private struct IntegrationRow: View {
                     }
                     .controlSize(.small)
                 }
+                Button("Stop monitoring") {
+                    Task { await store.setIntegrationMonitored(integration.id, false) }
+                }
+                .controlSize(.small)
             }
             HStack(spacing: 8) {
                 Text(integration.installed ? (integration.running ? "running" : "installed") : (integration.configured ? "configured" : "not installed"))

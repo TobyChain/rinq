@@ -103,7 +103,7 @@ class CollectorTests(unittest.TestCase):
                "trackingOff": ["anthropic"]}
         self.assertEqual(collectors.collect(cfg), [])
         original = integrations.discover_integrations
-        integrations.discover_integrations = lambda: []
+        integrations.discover_integrations = lambda **_kwargs: []
         try:
             vendor = next(v for v in settings_api.public_settings(cfg)["vendors"]
                           if v["id"] == "anthropic")
@@ -449,6 +449,68 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(zcode["authMethod"], "oauth")
         self.assertEqual(zcode["planState"], "available")
         self.assertNotIn("credentials", json.dumps(zcode))
+
+    def test_cancelled_integration_is_listed_but_not_probed(self) -> None:
+        home = Path(tempfile.mkdtemp(prefix="rinq-cancel-integration-"))
+        app_root = Path(tempfile.mkdtemp(prefix="rinq-cancel-apps-"))
+        app = app_root / "ZCode.app" / "Contents"
+        app.mkdir(parents=True)
+        (app / "Info.plist").write_bytes(__import__("plistlib").dumps({
+            "CFBundleIdentifier": "dev.zcode.app",
+            "CFBundleShortVersionString": "test",
+        }))
+
+        result = integrations.discover_integrations(
+            home=home, app_dirs=(app_root,), process_text="ZCode Helper",
+            cancelled={"zcode"},
+        )
+        zcode = next(item for item in result if item["id"] == "zcode")
+        # The row survives so monitoring can be resumed, but nothing was read.
+        self.assertFalse(zcode["monitored"])
+        self.assertFalse(zcode["installed"])
+        self.assertFalse(zcode["running"])
+        self.assertIsNone(zcode["appPath"])
+        self.assertEqual(zcode["authState"], "unknown")
+        self.assertFalse(zcode["usageAvailable"])
+
+    def test_monitored_integrations_default_to_true(self) -> None:
+        home = Path(tempfile.mkdtemp(prefix="rinq-monitored-"))
+        app_root = Path(tempfile.mkdtemp(prefix="rinq-monitored-apps-"))
+        app = app_root / "ZCode.app" / "Contents"
+        app.mkdir(parents=True)
+        (app / "Info.plist").write_bytes(__import__("plistlib").dumps({
+            "CFBundleIdentifier": "dev.zcode.app",
+        }))
+        result = integrations.discover_integrations(
+            home=home, app_dirs=(app_root,), process_text=""
+        )
+        zcode = next(item for item in result if item["id"] == "zcode")
+        self.assertTrue(zcode["monitored"])
+        self.assertTrue(zcode["installed"])
+
+    def test_cancel_and_resume_monitoring_patch(self) -> None:
+        from rinq import settings_api
+        cfg = {"keys": {}, "integrationOff": [], "ringOrder": []}
+        settings_api.apply_public_settings(cfg, {"monitored": {"zcode": False}})
+        self.assertEqual(cfg["integrationOff"], ["zcode"])
+        settings_api.apply_public_settings(cfg, {"monitored": {"zcode": True}})
+        self.assertEqual(cfg["integrationOff"], [])
+
+    def test_public_settings_passes_cancelled_integrations(self) -> None:
+        from rinq import settings_api
+        seen = {}
+        original = integrations.discover_integrations
+
+        def capture(**kwargs):
+            seen.update(kwargs)
+            return []
+
+        integrations.discover_integrations = capture
+        try:
+            settings_api.public_settings({"keys": {}, "integrationOff": ["cursor"]})
+        finally:
+            integrations.discover_integrations = original
+        self.assertEqual(seen["cancelled"], {"cursor"})
 
 
 class ConfigEndpointTests(unittest.TestCase):

@@ -321,6 +321,42 @@ def _zcode_state(home: Path) -> dict[str, Any]:
     }
 
 
+# Account metadata Rinq reports when an IDE exposes none. Also the shape of a
+# cancelled integration, which is never probed.
+_UNKNOWN_STATE: dict[str, Any] = {
+    "authMethod": "unknown",
+    "authState": "unknown",
+    "planState": "unknown",
+    "planReasons": [],
+    "quotaState": "unknown",
+    "usageAvailable": False,
+}
+
+
+def _paused_integration(definition: dict[str, Any]) -> dict[str, Any]:
+    """Identity-only record for an IDE whose monitoring the user cancelled.
+
+    A cancelled IDE is not probed at all, so Rinq reads none of its files.
+    """
+    return {
+        "id": definition["id"],
+        "label": definition["label"],
+        "vendor": definition["vendor"],
+        "monitored": False,
+        "installed": False,
+        "configured": False,
+        "running": False,
+        "version": None,
+        "bundleId": definition.get("bundle_id"),
+        "appPath": None,
+        "usageAdapter": None,
+        "usageSupport": definition.get("usage_support", "none"),
+        "quotaSupport": definition.get("quota_support", "unavailable"),
+        **_UNKNOWN_STATE,
+        "connectURL": definition["connect_url"],
+    }
+
+
 def _integration(definition: dict[str, Any], app_dirs: tuple[Path, ...], home: Path, process_text: str) -> dict[str, Any]:
     app = _find_app(definition, app_dirs)
     presence = app or next(
@@ -331,18 +367,12 @@ def _integration(definition: dict[str, Any], app_dirs: tuple[Path, ...], home: P
     version = None
     if app:
         bundle_id, version = _bundle_metadata(app)
-    state = _zcode_state(home) if definition["id"] == "zcode" else {
-        "authMethod": "unknown",
-        "authState": "unknown",
-        "planState": "unknown",
-        "planReasons": [],
-        "quotaState": "unknown",
-        "usageAvailable": False,
-    }
+    state = _zcode_state(home) if definition["id"] == "zcode" else dict(_UNKNOWN_STATE)
     return {
         "id": definition["id"],
         "label": definition["label"],
         "vendor": definition["vendor"],
+        "monitored": True,
         "installed": app is not None,
         "configured": presence is not None,
         "running": _is_running(definition, process_text),
@@ -367,18 +397,25 @@ def discover_integrations(
     home: Path | None = None,
     app_dirs: tuple[Path, ...] | None = None,
     process_text: str | None = None,
+    cancelled: set[str] | None = None,
     include_undetected: bool = False,
 ) -> list[dict[str, Any]]:
     """Return local IDE metadata without exposing account secrets."""
     home = home or Path.home()
     app_dirs = app_dirs or _app_dirs()
+    cancelled = cancelled or set()
     process_text = _running_processes() if process_text is None else process_text
-    result = [_integration(item, app_dirs, home, process_text) for item in APP_DEFINITIONS]
+    result = [
+        _paused_integration(item) if item["id"] in cancelled
+        else _integration(item, app_dirs, home, process_text)
+        for item in APP_DEFINITIONS
+    ]
     if include_undetected:
         return result
     return [
         item for item in result
-        if item["installed"] or item["configured"] or item["running"] or item["usageAvailable"]
+        if not item["monitored"]
+        or item["installed"] or item["configured"] or item["running"] or item["usageAvailable"]
     ]
 
 

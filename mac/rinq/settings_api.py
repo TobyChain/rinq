@@ -51,7 +51,9 @@ def public_settings(cfg: dict) -> dict[str, Any]:
         "host": cfg.get("host", "127.0.0.1"),
         "port": cfg.get("port", cfg_mod.DEFAULT_PORT),
         "vendors": vendors,
-        "integrations": integrations.discover_integrations(),
+        "integrations": integrations.discover_integrations(
+            cancelled=cfg_mod.cancelled_integrations(cfg)
+        ),
     }
 
 
@@ -75,6 +77,10 @@ def apply_public_settings(cfg: dict, patch: dict) -> dict:
         for vid, on in patch["tracking"].items():
             if vid in cfg_mod.VENDOR_IDS and isinstance(on, bool):
                 _set_cancelled(cfg, vid, not on)
+    if "monitored" in patch and isinstance(patch["monitored"], dict):
+        for vid, on in patch["monitored"].items():
+            if vid in _integration_ids() and isinstance(on, bool):
+                _set_integration_cancelled(cfg, vid, not on)
     if "ringOrder" in patch and isinstance(patch["ringOrder"], list):
         valid = set(_all_ring_ids())
         cfg["ringOrder"] = [r for r in patch["ringOrder"] if r in valid]
@@ -91,6 +97,21 @@ def _set_cancelled(cfg: dict, vendor: str, cancelled: bool) -> None:
     else:
         off = [vid for vid in off if vid != vendor]
     cfg["trackingOff"] = off
+
+
+def _set_integration_cancelled(cfg: dict, integration: str, cancelled: bool) -> None:
+    """Add or remove one IDE in the persisted monitoring cancellation list."""
+    off = [vid for vid in (cfg.get("integrationOff") or []) if vid in _integration_ids()]
+    if cancelled:
+        if integration not in off:
+            off.append(integration)
+    else:
+        off = [vid for vid in off if vid != integration]
+    cfg["integrationOff"] = off
+
+
+def _integration_ids() -> set[str]:
+    return {item["id"] for item in integrations.APP_DEFINITIONS}
 
 
 def connect_integration(integration_id: str) -> bool:

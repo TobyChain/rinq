@@ -32,6 +32,10 @@ DEFAULT_CONFIG = {
     # that vendor) resumes tracking. Deliberately separate from the retired
     # `enabled` map so those legacy toggle values stay inert.
     "trackingOff": [],
+    # Local IDE integrations whose monitoring the user cancelled. A cancelled
+    # IDE keeps its identity row but is not probed, so Rinq reads none of its
+    # files. Removing an id resumes monitoring.
+    "integrationOff": [],
     # Order ring ids are displayed (rings, bars, and the dashboard). Anything
     # not listed follows in default order.
     "ringOrder": ["codex-5h", "codex-week", "minimax-5h", "minimax-week",
@@ -81,6 +85,11 @@ def save_config(cfg: dict) -> None:
 def cancelled_vendors(cfg: dict) -> set[str]:
     """Return vendors whose quota tracking the user explicitly cancelled."""
     return {str(vid) for vid in (cfg.get("trackingOff") or [])}
+
+
+def cancelled_integrations(cfg: dict) -> set[str]:
+    """Return local IDE integrations whose monitoring the user cancelled."""
+    return {str(vid) for vid in (cfg.get("integrationOff") or [])}
 
 
 def ring_sort_key(cfg: dict):

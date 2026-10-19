@@ -96,6 +96,7 @@ struct IntegrationInfo: Codable, Identifiable, Hashable {
     let id: String
     let label: String
     let vendor: String
+    let monitored: Bool
     let installed: Bool
     let configured: Bool
     let running: Bool
@@ -112,6 +113,12 @@ struct IntegrationInfo: Codable, Identifiable, Hashable {
     let usageSupport: String?
     let quotaSupport: String?
     let connectURL: String
+
+    /// Detected IDEs are listed, and so are cancelled ones: their row is the
+    /// only place monitoring can be resumed.
+    var isListed: Bool {
+        !monitored || installed || configured || running || usageAvailable
+    }
 }
 
 struct SettingsInfo: Codable {

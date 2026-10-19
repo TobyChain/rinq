@@ -71,6 +71,18 @@ final class Store: ObservableObject {
         await patch(["tracking": [id: on]])
     }
 
+    /// Cancel or resume monitoring for one local IDE.
+    func setIntegrationMonitored(_ id: String, _ on: Bool) async {
+        await patch(["monitored": [id: on]])
+    }
+
+    /// Rescan this Mac for local IDEs and republish the settings snapshot.
+    func refreshIntegrations() async {
+        if let rescan: SettingsInfo = await fetch("/config", timeout: 30) {
+            settings = rescan
+        }
+    }
+
     func connect(_ integration: IntegrationInfo) async {
         guard let url = URL(string: "\(base)/auth/connect"),
               let data = try? JSONSerialization.data(withJSONObject: ["integrationId": integration.id]) else { return }

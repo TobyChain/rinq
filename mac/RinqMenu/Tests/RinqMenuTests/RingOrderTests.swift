@@ -412,6 +412,31 @@ final class VendorTrackingTests: XCTestCase {
     }
 }
 
+final class IntegrationMonitoringTests: XCTestCase {
+    private func integration(monitored: Bool, installed: Bool) -> IntegrationInfo {
+        IntegrationInfo(
+            id: "zcode", label: "ZCode", vendor: "zhipu", monitored: monitored,
+            installed: installed, configured: false, running: false, version: nil,
+            bundleId: nil, appPath: nil, usageAvailable: false, usageAdapter: nil,
+            authMethod: "unknown", authState: "unknown", planState: "unknown",
+            planReasons: [], quotaState: "unknown", usageSupport: "structured",
+            quotaSupport: "plan_only", connectURL: "https://example.invalid/"
+        )
+    }
+
+    func testCancelledIdeStaysListedSoMonitoringCanBeResumed() {
+        XCTAssertTrue(integration(monitored: false, installed: false).isListed)
+    }
+
+    func testUndetectedMonitoredIdeIsHidden() {
+        XCTAssertFalse(integration(monitored: true, installed: false).isListed)
+    }
+
+    func testDetectedIdeIsListed() {
+        XCTAssertTrue(integration(monitored: true, installed: true).isListed)
+    }
+}
+
 final class ProviderTrackingLayoutTests: XCTestCase {
     func testRowCountStaysLatchedAfterRowsDisappear() {
         var state = PopoverProviderLayoutState(ringCount: 5)

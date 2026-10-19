@@ -30,7 +30,7 @@ Rinq has two independent data paths:
 | **Daily inspection** | Hovering a day shows its input and output counts in one-decimal K/M/B units |
 | **Apple surfaces** | macOS menu bar, iPhone, iPad, Apple Watch, iOS widget, and watchOS complication share the same ring model |
 | **Provider controls** | Credentials, connection state, per-vendor tracking cancellation, reference totals, and ring order are managed locally |
-| **IDE integrations** | Detect installed/running coding IDEs, local account state, and structured local usage |
+| **IDE integrations** | Detect installed/running coding IDEs, local account state, and structured local usage, with per-IDE monitoring and a manual rescan |
 
 ## How It Works
 
@@ -137,7 +137,7 @@ Hooks POST to the local daemon only. Only lifecycle state and safe metadata are 
 
 The macOS Providers tab also detects installed and running coding IDEs such as ZCode, MiMo Code/Desktop, and Trae CN. It reports the IDE's non-secret login/entitlement state and can open the vendor's official account connection page. Rinq never asks for a vendor password, reads browser cookies, or copies encrypted client credentials into `~/.rinq/config.json`.
 
-Integration support is capability-aware. ZCode currently exposes local OAuth/plan metadata and structured token usage; its entitlement endpoint does not by itself provide a valid used/remaining ring. MiMo Code/Desktop and Trae CN are detected when installed, while their personal subscription balances remain `unknown` until a stable official usage interface is available. The same policy applies to Copilot, Cursor, Windsurf, Gemini Code Assist, Zed, Cline, Roo Code, and Kilo Code.
+The Providers tab lists detected IDEs with a **Stop monitoring** action and a **Refresh** button that rescans this Mac. A cancelled IDE is not probed, keeps a single row, and can be resumed. Integration support is capability-aware. ZCode currently exposes local OAuth/plan metadata and structured token usage; its entitlement endpoint does not by itself provide a valid used/remaining ring. MiMo Code/Desktop and Trae CN are detected when installed, while their personal subscription balances remain `unknown` until a stable official usage interface is available. The same policy applies to Copilot, Cursor, Windsurf, Gemini Code Assist, Zed, Cline, Roo Code, and Kilo Code.
 
 ## Configuration
 

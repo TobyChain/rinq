@@ -47,7 +47,7 @@ Rinq 是本地优先的 AI 配额和本地编码 Agent 用量监视器。它把�
 | 配置 | `mac/rinq/config.py`、`settings_api.py` | collectors、server、macOS Settings | 公共配置不得回传明文密钥 |
 | 本地用量采集 | `mac/rinq/usage.py` 的 source adapter 和增量 SQLite 索引 | `/usage`、macOS Usage UI | 只持久化计数和来源元数据 |
 | 本地 Agent 会话 | `mac/rinq/sessions.py` 从 JSONL 尾部重建状态；`events.py` 写入 hook 覆盖和关闭 tombstone | `/sessions`、`/status.agents`、Rings 会话面板、网页 dashboard | 只显示 `isOpen` 会话，state 排序为 `running/subagents_running/waiting/idle`；会话文本只在内存中返回一行摘要，不持久化 |
-| 本地 IDE 集成 | `mac/rinq/integrations.py` | `/config`/`/integrations`、Settings UI | 安装、认证、套餐、实时配额是不同能力状态 |
+| 本地 IDE 集成 | `mac/rinq/integrations.py` | `/config`/`/integrations`、Settings UI | 安装、认证、套餐、实时配额是不同能力状态；`monitored` 为 false 的 IDE 不探测、只保留身份行，取消记录写入 `config.json` 的 `integrationOff` |
 | Agent 事件 | CLI/hook -> `events.py` -> `state.py` | `/status`、`/sessions`、dashboard、push | `started/completed/failed/waiting`；带 `sessionId` 时同时覆盖会话状态 |
 | Apple 共享模型 | `app/Shared/Models.swift` 和 Provider 输出 | iOS、watchOS、Widget | 与 `schema/status.md` 的 ring 语义一致 |
 
