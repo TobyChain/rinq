@@ -282,6 +282,21 @@ struct PopoverAlertLayoutState: Equatable {
     }
 }
 
+/// Latches the largest provider row count shown while a popover is open.
+/// Cancelling quota tracking drops a row, and without the latch the window
+/// would shrink under the pointer that just clicked the button.
+struct PopoverProviderLayoutState: Equatable {
+    private(set) var rowCount: Int
+
+    init(ringCount: Int) {
+        rowCount = max(ringCount, 0)
+    }
+
+    mutating func observe(ringCount: Int) {
+        rowCount = max(rowCount, ringCount)
+    }
+}
+
 enum RingPresentation {
     static func quotaRings(_ rings: [Ring]) -> [Ring] {
         rings.filter(\.hasQuotaValue)

@@ -29,6 +29,7 @@ struct RootView: View {
     let onAlertsDismissed: () -> Void
     @State private var tab: RinqTab = .rings
     @State private var alertLayoutState: PopoverAlertLayoutState
+    @State private var providerLayoutState: PopoverProviderLayoutState
 
     init(
         store: Store,
@@ -41,17 +42,23 @@ struct RootView: View {
         self.onLayoutChange = onLayoutChange
         self.onAlertsDismissed = onAlertsDismissed
         _alertLayoutState = State(initialValue: PopoverAlertLayoutState(hasAlerts: !store.alerts.isEmpty))
+        _providerLayoutState = State(
+            initialValue: PopoverProviderLayoutState(ringCount: store.status?.rings.count ?? 0)
+        )
     }
 
     private var layout: PopoverLayout {
-        let rings = store.status?.rings ?? []
-        return PopoverLayout.make(
-            rings: rings,
+        PopoverLayout.make(
+            ringCount: providerLayoutState.rowCount,
             visibleScreenSize: visibleScreenSize,
             hasAlerts: alertLayoutState.reservesAlertSpace,
             showsAgentStrip: hasAgentSessions,
             agentSessionCount: openSessionCount
         )
+    }
+
+    private var ringCount: Int {
+        store.status?.rings.count ?? 0
     }
 
     private var hasAgentSessions: Bool {
@@ -113,6 +120,9 @@ struct RootView: View {
         .onChange(of: layout) { onLayoutChange($0) }
         .onChange(of: !store.alerts.isEmpty) { hasAlerts in
             alertLayoutState.observe(hasAlerts: hasAlerts)
+        }
+        .onChange(of: ringCount) { count in
+            providerLayoutState.observe(ringCount: count)
         }
     }
 

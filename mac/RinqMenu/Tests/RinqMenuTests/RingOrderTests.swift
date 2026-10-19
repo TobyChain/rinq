@@ -408,6 +408,59 @@ final class VendorTrackingTests: XCTestCase {
     }
 }
 
+final class ProviderTrackingLayoutTests: XCTestCase {
+    func testRowCountStaysLatchedAfterRowsDisappear() {
+        var state = PopoverProviderLayoutState(ringCount: 5)
+        let size = CGSize(width: 1440, height: 900)
+        let before = PopoverLayout.make(ringCount: state.rowCount, visibleScreenSize: size)
+
+        // Cancelling quota tracking drops a row; the window must not shrink.
+        state.observe(ringCount: 4)
+
+        XCTAssertEqual(state.rowCount, 5)
+        XCTAssertEqual(PopoverLayout.make(ringCount: state.rowCount, visibleScreenSize: size), before)
+    }
+
+    func testRowCountStillGrowsWhenMoreProvidersAppear() {
+        var state = PopoverProviderLayoutState(ringCount: 3)
+        state.observe(ringCount: 4)
+        XCTAssertEqual(state.rowCount, 4)
+    }
+
+    @MainActor
+    func testRenderedPopoverKeepsHeightAfterTrackingIsCancelled() {
+        let suite = "rinq-root-provider-tests-\(UUID().uuidString)"
+        let store = Store(alertDefaults: UserDefaults(suiteName: suite)!)
+        store.status = Status(rings: Self.rings(count: 5), updatedAt: nil)
+        let root = RootView(
+            store: store, visibleScreenSize: CGSize(width: 1440, height: 900),
+            onLayoutChange: { _ in }, onAlertsDismissed: {}
+        )
+        let hosting = NSHostingView(rootView: root)
+        hosting.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        let before = hosting.fittingSize
+
+        store.status = Status(rings: Self.rings(count: 4), updatedAt: nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        hosting.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(hosting.fittingSize, before)
+    }
+
+    private static func rings(count: Int) -> [Ring] {
+        (0..<count).map { index in
+            Ring(
+                id: "vendor-\(index)", label: "Vendor \(index)", vendor: "vendor-\(index)",
+                kind: "window", usedPercent: 20, remainingPercent: 80, remaining: nil,
+                currency: nil, resetsAt: nil, windowMins: 300, accent: "blue",
+                spentUsd: nil, budgetUsd: nil, usedValue: 20, totalValue: 100,
+                valueUnit: "percent", status: nil, statusDetail: nil
+            )
+        }
+    }
+}
+
 final class UsageFormattingTests: XCTestCase {
     func testHoverTokenCountUsesThousandsBelowPointOneMillion() {
         XCTAssertEqual(formatHoverTokenCount(99_999), "100.0K")
