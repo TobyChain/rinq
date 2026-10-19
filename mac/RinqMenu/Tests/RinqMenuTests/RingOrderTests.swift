@@ -381,6 +381,33 @@ final class AlertDismissalTests: XCTestCase {
     }
 }
 
+final class VendorTrackingTests: XCTestCase {
+    private func vendor(hasCredential: Bool, tracking: Bool) -> VendorInfo {
+        VendorInfo(
+            id: "jina", label: "Jina AI", accent: "teal", kind: "balance",
+            tracking: tracking, hasCredential: hasCredential, hasKeySet: false
+        )
+    }
+
+    func testCancelledVendorKeepsCredentialButReportsTrackingOff() {
+        let v = vendor(hasCredential: true, tracking: false)
+        XCTAssertTrue(v.trackingCancelled)
+        XCTAssertEqual(v.statusText, "tracking off")
+    }
+
+    func testTrackedVendorReportsActive() {
+        let v = vendor(hasCredential: true, tracking: true)
+        XCTAssertFalse(v.trackingCancelled)
+        XCTAssertEqual(v.statusText, "active")
+    }
+
+    func testVendorWithoutCredentialIsNotConnected() {
+        let v = vendor(hasCredential: false, tracking: false)
+        XCTAssertFalse(v.trackingCancelled)
+        XCTAssertEqual(v.statusText, "not connected")
+    }
+}
+
 final class UsageFormattingTests: XCTestCase {
     func testHoverTokenCountUsesThousandsBelowPointOneMillion() {
         XCTAssertEqual(formatHoverTokenCount(99_999), "100.0K")

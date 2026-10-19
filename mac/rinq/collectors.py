@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from .state import clamp_pct
+from . import config as config_mod
 from . import sources
 
 
@@ -621,11 +622,14 @@ def _status_ring(vendor: str, status: str) -> dict[str, Any]:
 
 
 def collect(cfg: dict) -> list[dict[str, Any]]:
-    """Fetch credentialed providers concurrently; mock-only remains offline."""
+    """Fetch tracked providers concurrently; mock-only remains offline."""
     collector_names = list(cfg.get("collectors", ["mock"]))
+    cancelled = config_mod.cancelled_vendors(cfg)
     active = {
         name for name in _STATUS_META
-        if collector_names != ["mock"] and sources.has_vendor_credential(cfg, name)
+        if collector_names != ["mock"]
+        and name not in cancelled
+        and sources.has_vendor_credential(cfg, name)
     }
     for name in _STATUS_META:
         if name in active and name not in collector_names:
@@ -656,8 +660,9 @@ def collect(cfg: dict) -> list[dict[str, Any]]:
             else:
                 status = "quota_unavailable"
             rings.append(_status_ring(name, status))
-    from . import config as _config
-    rings.sort(key=_config.ring_sort_key(cfg))
+    # A cancelled vendor stays hidden even when its collector still reports it.
+    rings = [r for r in rings if r.get("vendor") not in cancelled]
+    rings.sort(key=config_mod.ring_sort_key(cfg))
     return rings
 
 

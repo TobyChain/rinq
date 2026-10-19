@@ -26,6 +26,12 @@ DEFAULT_CONFIG = {
     # local file (chmod 600); they are sent only to the matching vendor and are
     # never sent to the browser (the /config endpoint masks them).
     "keys": {},
+    # Vendors whose quota tracking the user cancelled from the Providers tab.
+    # A vendor is tracked whenever it has a usable credential, so only explicit
+    # cancellations are listed here; removing an id (or saving a new key for
+    # that vendor) resumes tracking. Deliberately separate from the retired
+    # `enabled` map so those legacy toggle values stay inert.
+    "trackingOff": [],
     # Order ring ids are displayed (rings, bars, and the dashboard). Anything
     # not listed follows in default order.
     "ringOrder": ["codex-5h", "codex-week", "minimax-5h", "minimax-week",
@@ -70,6 +76,11 @@ def save_config(cfg: dict) -> None:
         os.chmod(CONFIG_PATH, 0o600)
     except OSError:
         pass
+
+
+def cancelled_vendors(cfg: dict) -> set[str]:
+    """Return vendors whose quota tracking the user explicitly cancelled."""
+    return {str(vid) for vid in (cfg.get("trackingOff") or [])}
 
 
 def ring_sort_key(cfg: dict):

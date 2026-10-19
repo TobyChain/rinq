@@ -97,13 +97,11 @@ class CollectorTests(unittest.TestCase):
         rings = collectors.collect(cfg)
         self.assertEqual(rings, [])
 
-    def test_credential_activates_provider_despite_legacy_disabled_flag(self) -> None:
+    def test_cancelled_vendor_is_not_collected_even_with_a_credential(self) -> None:
         from rinq import settings_api
         cfg = {"collectors": ["anthropic"], "keys": {"anthropic": "test-key"},
-               "enabled": {"anthropic": False}}
-        rings = collectors.collect(cfg)
-        self.assertEqual([r["id"] for r in rings], ["anthropic-status"])
-        self.assertEqual(rings[0]["status"], "quota_unsupported")
+               "trackingOff": ["anthropic"]}
+        self.assertEqual(collectors.collect(cfg), [])
         original = integrations.discover_integrations
         integrations.discover_integrations = lambda: []
         try:
@@ -111,14 +109,48 @@ class CollectorTests(unittest.TestCase):
                           if v["id"] == "anthropic")
         finally:
             integrations.discover_integrations = original
-        self.assertTrue(vendor["enabled"])
+        # The credential is still reported so the UI can offer "Resume".
         self.assertTrue(vendor["hasCredential"])
+        self.assertFalse(vendor["tracking"])
         self.assertNotIn("test-key", json.dumps(vendor))
+
+    def test_cancel_flag_only_affects_the_named_vendor(self) -> None:
+        cfg = {"collectors": [], "keys": {"anthropic": "test-key", "xiaomi": "test-key"},
+               "trackingOff": ["anthropic"], "ringOrder": []}
+        self.assertEqual([r["id"] for r in collectors.collect(cfg)], ["xiaomi-status"])
+
+    def test_mock_rings_respect_the_cancel_flag(self) -> None:
+        cfg = {"collectors": ["mock"], "trackingOff": ["deepseek"]}
+        ids = [r["id"] for r in collectors.collect(cfg)]
+        self.assertNotIn("deepseek-balance", ids)
+        self.assertIn("openai-api", ids)
 
     def test_legacy_enabled_provider_without_credential_stays_hidden(self) -> None:
         cfg = {"collectors": ["anthropic"], "enabled": {"anthropic": True}, "ringOrder": []}
         rings = collectors.collect(cfg)
         self.assertEqual(rings, [])
+
+    def test_cancel_and_resume_patch_write_only_the_cancellation(self) -> None:
+        from rinq import settings_api
+        cfg = {"keys": {}, "trackingOff": [], "ringOrder": []}
+        settings_api.apply_public_settings(cfg, {"tracking": {"jina": False}})
+        self.assertEqual(cfg["trackingOff"], ["jina"])
+        settings_api.apply_public_settings(cfg, {"tracking": {"jina": True}})
+        self.assertEqual(cfg["trackingOff"], [])
+
+    def test_saving_a_key_resumes_cancelled_tracking(self) -> None:
+        from rinq import settings_api
+        cfg = {"keys": {}, "trackingOff": ["jina"], "ringOrder": []}
+        settings_api.apply_public_settings(cfg, {"keys": {"jina": "new-key"}})
+        self.assertEqual(cfg["keys"], {"jina": "new-key"})
+        self.assertEqual(cfg["trackingOff"], [])
+
+    def test_retired_enabled_map_does_not_cancel_tracking(self) -> None:
+        # Older builds wrote enabled: {vendor: false} for the removed toggle;
+        # those values must stay inert instead of silently hiding a vendor.
+        cfg = {"collectors": ["anthropic"], "keys": {"anthropic": "test-key"},
+               "enabled": {"anthropic": False}, "ringOrder": []}
+        self.assertEqual([r["id"] for r in collectors.collect(cfg)], ["anthropic-status"])
 
     def test_credentialed_provider_with_failed_quota_has_unavailable_status(self) -> None:
         cfg = {
@@ -143,7 +175,6 @@ class CollectorTests(unittest.TestCase):
 
         cfg = {
             "collectors": ["deepseek", "mock"],
-            "enabled": {"deepseek": True},
             "keys": {"deepseek": "test-key"},
             "ringOrder": [],
         }
@@ -369,10 +400,10 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(collectors._jina({}), [])
 
     def test_unsupported_vendor_shows_not_supported_status(self) -> None:
-        # anthropic/xiaomi have no live-quota route; enabling with a key must not
-        # claim "quota unavailable" (which implies a transient failure).
+        # anthropic/xiaomi have no live-quota route; a key must not claim
+        # "quota unavailable" (which implies a transient failure).
         cfg = {
-            "collectors": ["xiaomi"], "enabled": {"xiaomi": True},
+            "collectors": ["xiaomi"],
             "keys": {"xiaomi": "test-key"}, "ringOrder": [],
         }
         rings = collectors.collect(cfg)

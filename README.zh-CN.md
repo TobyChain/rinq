@@ -29,7 +29,7 @@ Rinq 包含两条相互独立的数据路径：
 | **本地用量** | 汇总每天和滚动一周的 input/output tokens，不保存 prompt 或响应正文 |
 | **逐日查看** | 悬停每日柱组，以保留一位小数的 K/M/B 单位显示当天 input/output |
 | **Apple 多端** | macOS 菜单栏、iPhone、iPad、Apple Watch、iOS 小组件和 watchOS complication 共享同一套圆环模型 |
-| **厂商控制** | 在本机管理凭据、连接状态、参考总额和圆环顺序 |
+| **厂商控制** | 在本机管理凭据、连接状态、按厂商取消额度跟踪、参考总额和圆环顺序 |
 
 ## 工作原理
 
@@ -74,7 +74,7 @@ cd rinq
 
 - **Rings**：每个 provider 一条横栏、右侧独立圆环，显示重置时间窗和可点击消除的告警；横栏上方是本地 Agent 会话状态条（运行中、等待审批、空闲）。
 - **Usage**：显示今日、滚动一周、逐日 input/output 和分应用汇总。
-- **Providers**：管理本地凭据、自动激活状态和拖拽排序。
+- **Providers**：管理本地凭据、自动激活状态、按厂商取消额度跟踪和拖拽排序。
 
 弹窗底部的 footer 有一个 **Quit Rinq** 按钮，用于退出菜单栏应用。弹窗打开后若 10 秒内无交互会自动收起；在其中点击、滚动、按键或移动指针都会重置计时，存在活动告警时保持展开直到被确认。
 
@@ -101,7 +101,7 @@ daemon 默认监听 `127.0.0.1:7788`。主要本地接口为 `/status`、`/usage
 | 小米 MiMo | 暂不支持 | API Key |
 | Claude API | 暂不支持 | Admin API Key |
 
-保存 API key 或检测到受支持的账户后，厂商自动激活，无需额外开关。没有可用凭据的厂商不会显示。余额类圆环使用配置中的 `balanceFull` 作为参考总额。GLM 的 Coding Plan Key 显示滚动的 5 小时和周请求限额，按量付费 Key 则回退为预付余额。Jina 显示其 Embeddings/Reranker/Reader/Search 共享 token 池；dashboard 主机由 `hosts.jina` 或 `JINA_DASHBOARD_HOST` 配置（默认 `embeddings-dashboard-api.jinaai.cn`，国际站用 `embeddings-dashboard-api.jina.ai`）。小米 MiMo 和 Claude API 暂无可用的实时额度接口，存在凭据时显示明确的“暂不支持”卡片。ChatGPT/Codex 依赖非官方订阅接口，仅适用于自行构建或侧载的应用，不应进入 App Store 构建。
+保存 API key 或检测到受支持的账户后，厂商自动激活，无需额外开关。之后可以在该厂商的 Providers 行里点击 **Stop tracking** 取消额度跟踪：凭据保留，Rinq 停止抓取并隐藏其圆环；点击 **Resume tracking** 或重新保存 key 即可恢复。没有可用凭据的厂商不会显示。余额类圆环使用配置中的 `balanceFull` 作为参考总额。GLM 的 Coding Plan Key 显示滚动的 5 小时和周请求限额，按量付费 Key 则回退为预付余额。Jina 显示其 Embeddings/Reranker/Reader/Search 共享 token 池；dashboard 主机由 `hosts.jina` 或 `JINA_DASHBOARD_HOST` 配置（默认 `embeddings-dashboard-api.jinaai.cn`，国际站用 `embeddings-dashboard-api.jina.ai`）。小米 MiMo 和 Claude API 暂无可用的实时额度接口，存在凭据时显示明确的“暂不支持”卡片。ChatGPT/Codex 依赖非官方订阅接口，仅适用于自行构建或侧载的应用，不应进入 App Store 构建。
 
 ## 本地 token 用量
 

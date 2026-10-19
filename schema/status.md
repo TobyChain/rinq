@@ -202,13 +202,21 @@ tokens. Rinq does not read browser cookies or encrypted credential values.
 
 ## Vendors and credentials
 
-On macOS, a discovered credential activates its provider automatically. The
-`GET /config` vendor field `enabled` remains available and equals
-`hasCredential`; legacy `enabled` configuration and writes no longer control
-activation. A key also adds its provider to a legacy collector list. An explicit
+On macOS, a discovered credential activates its provider automatically. A key
+also adds its provider to a legacy collector list. An explicit
 `collectors: ["mock"]` remains an offline demo. Connected providers whose quota
 lookup fails retain a grey unavailable row. Credentials establish connection
 configuration, not proof that a key is valid or that a quota API is supported.
+
+Quota tracking can be cancelled per vendor without deleting the credential.
+`POST /config` accepts `{"tracking": {"<vendor>": false}}` to cancel and
+`{"tracking": {"<vendor>": true}}` to resume. Cancellations are stored as the
+`trackingOff` list in `config.json`. A cancelled vendor is not fetched and
+produces no rings, even while its credential is still detected; saving a new key
+for it clears the cancellation. In `GET /config`, the vendor field `tracking` is
+the resulting state, so `hasCredential: true` with `tracking: false` means
+tracking was cancelled. The retired `enabled` map and response field are gone;
+older stored `enabled` values are inert.
 
 | collector | env var | endpoint (base) | kind | verified |
 | --- | --- | --- | --- | --- |

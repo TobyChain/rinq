@@ -29,7 +29,7 @@ Rinq has two independent data paths:
 | **Local usage** | Daily and rolling-week input/output tokens are aggregated without storing prompts or responses |
 | **Daily inspection** | Hovering a day shows its input and output counts in one-decimal K/M/B units |
 | **Apple surfaces** | macOS menu bar, iPhone, iPad, Apple Watch, iOS widget, and watchOS complication share the same ring model |
-| **Provider controls** | Credentials, connection state, reference totals, and ring order are managed locally |
+| **Provider controls** | Credentials, connection state, per-vendor tracking cancellation, reference totals, and ring order are managed locally |
 | **IDE integrations** | Detect installed/running coding IDEs, local account state, and structured local usage |
 
 ## How It Works
@@ -75,7 +75,7 @@ The popover contains:
 
 - **Rings:** configured quotas, reset windows, and dismissible alerts.
 - **Usage:** today, rolling week, per-day input/output, and per-app totals.
-- **Providers:** local credentials, automatic activation, and drag-to-reorder.
+- **Providers:** local credentials, automatic activation, per-vendor tracking cancellation, and drag-to-reorder.
 
 A footer at the bottom of the popover has a **Quit Rinq** button that stops the
 menu-bar app. The popover closes itself after 10 seconds without interaction;
@@ -105,7 +105,7 @@ The daemon listens on `127.0.0.1:7788` by default. Useful local endpoints are `/
 | Xiaomi MiMo | Not supported yet | API key |
 | Claude API | Not supported yet | Admin API key |
 
-Saving an API key or detecting a supported account activates the provider automatically; there is no separate activation switch. Providers without a usable credential are hidden. Balance rings use the configured `balanceFull` value as their reference total. GLM coding-plan keys show rolling 5-hour and weekly request windows; pay-as-you-go keys fall back to a prepaid balance. Jina reports its shared Embeddings/Reranker/Reader/Search token pool; its dashboard host is `hosts.jina` / `JINA_DASHBOARD_HOST` (default `embeddings-dashboard-api.jinaai.cn`, use `embeddings-dashboard-api.jina.ai` for the international host). Xiaomi MiMo and Claude API have no implemented live-quota route yet and show an explicit "Not supported" card when a credential is present. ChatGPT/Codex relies on an unofficial subscription endpoint and is intended for self-built or sideloaded apps, not App Store distribution.
+Saving an API key or detecting a supported account activates the provider automatically; there is no separate activation switch. A provider can then be cancelled from its Providers row with **Stop tracking**: Rinq keeps the credential but stops fetching it and hides its rings. **Resume tracking**, or saving a new key, turns it back on. Providers without a usable credential are hidden. Balance rings use the configured `balanceFull` value as their reference total. GLM coding-plan keys show rolling 5-hour and weekly request windows; pay-as-you-go keys fall back to a prepaid balance. Jina reports its shared Embeddings/Reranker/Reader/Search token pool; its dashboard host is `hosts.jina` / `JINA_DASHBOARD_HOST` (default `embeddings-dashboard-api.jinaai.cn`, use `embeddings-dashboard-api.jina.ai` for the international host). Xiaomi MiMo and Claude API have no implemented live-quota route yet and show an explicit "Not supported" card when a credential is present. ChatGPT/Codex relies on an unofficial subscription endpoint and is intended for self-built or sideloaded apps, not App Store distribution.
 
 ## Local Token Usage
 

@@ -87,7 +87,7 @@ Rinq 是本地优先的 AI 配额和本地编码 Agent 用量监视器。它把�
 
 ## 不可破坏的产品和安全约束
 
-- macOS 提供商凭据存在即自动激活，Providers 不显示闪电或独立启用开关；`/config` 的 `enabled` 是 `hasCredential` 的兼容响应字段，旧 `enabled` 配置和写入不再控制采集。显式 `collectors: ["mock"]` 保持离线演示。
+- macOS 提供商凭据存在即自动激活，Providers 不显示闪电或独立启用开关；`/config` 的 `tracking` 表示该厂商当前的额度跟踪状态，`hasCredential=true` 且 `tracking=false` 表示用户已取消跟踪。取消只写 `config.json` 的 `trackingOff` 列表，不删除凭据，该厂商不采集、不产出圆环；重新保存 key 会清除该标记。旧 `enabled` 映射已废弃且保持无效，避免历史开关值静默生效。显式 `collectors: ["mock"]` 保持离线演示。
 - 配额的持久契约是 `usedValue`、`totalValue`、`valueUnit`；`usedPercent` 只用于归一化渲染，不能替代原始数值。
 - 未认证、无稳定接口或无法解析真实配额时，显示明确的灰色 `Not connected`、`Unavailable` 或 `unknown` 状态。不得伪装成 0% 使用量，也不得从套餐价格、授权上限、网页文案或浏览器 cookie 推断实时余额。
 - daemon 默认绑定 `127.0.0.1:7788`。配置写入和认证动作只允许 loopback 客户端。若改为 `0.0.0.0`，必须明确说明局域网暴露和无认证风险。

@@ -31,6 +31,7 @@ def _has_credential(cfg: dict, vendor: str) -> bool:
 
 def public_settings(cfg: dict) -> dict[str, Any]:
     keys = cfg.get("keys") or {}
+    cancelled = cfg_mod.cancelled_vendors(cfg)
     vendors = []
     for vid in cfg_mod.VENDOR_IDS:
         has = _has_credential(cfg, vid)
@@ -39,8 +40,9 @@ def public_settings(cfg: dict) -> dict[str, Any]:
             "label": VENDOR_META[vid]["label"],
             "accent": VENDOR_META[vid]["accent"],
             "kind": VENDOR_META[vid]["kind"],
-            # Keep the response field for clients; credentials determine activity.
-            "enabled": has,
+            # Quota tracking is on while a credential exists and the user has
+            # not cancelled this vendor; hasCredential tells the two apart.
+            "tracking": has and vid not in cancelled,
             "hasCredential": has,
             "hasKeySet": bool(keys.get(vid)),
         })
@@ -54,7 +56,7 @@ def public_settings(cfg: dict) -> dict[str, Any]:
 
 
 def apply_public_settings(cfg: dict, patch: dict) -> dict:
-    """Save keys and ring order; legacy activation toggles have no effect."""
+    """Save keys, per-vendor tracking cancellations, and ring order."""
     if "keys" in patch and isinstance(patch["keys"], dict):
         keys = cfg.setdefault("keys", {})
         for vid, val in patch["keys"].items():
@@ -63,14 +65,32 @@ def apply_public_settings(cfg: dict, patch: dict) -> dict:
             val = (val or "").strip()
             if val:
                 keys[vid] = val
+                # Supplying a credential is an explicit opt-in: drop a stale
+                # tracking cancellation so the vendor is tracked right away.
+                _set_cancelled(cfg, vid, False)
             elif vid in keys:
                 # empty string clears a user-entered key (auto-discovery may still find one)
                 del keys[vid]
+    if "tracking" in patch and isinstance(patch["tracking"], dict):
+        for vid, on in patch["tracking"].items():
+            if vid in cfg_mod.VENDOR_IDS and isinstance(on, bool):
+                _set_cancelled(cfg, vid, not on)
     if "ringOrder" in patch and isinstance(patch["ringOrder"], list):
         valid = set(_all_ring_ids())
         cfg["ringOrder"] = [r for r in patch["ringOrder"] if r in valid]
     cfg_mod.save_config(cfg)
     return cfg
+
+
+def _set_cancelled(cfg: dict, vendor: str, cancelled: bool) -> None:
+    """Add or remove one vendor in the persisted tracking cancellation list."""
+    off = [vid for vid in (cfg.get("trackingOff") or []) if vid in cfg_mod.VENDOR_IDS]
+    if cancelled:
+        if vendor not in off:
+            off.append(vendor)
+    else:
+        off = [vid for vid in off if vid != vendor]
+    cfg["trackingOff"] = off
 
 
 def connect_integration(integration_id: str) -> bool:

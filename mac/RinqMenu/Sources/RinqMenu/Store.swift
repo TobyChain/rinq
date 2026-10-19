@@ -66,6 +66,11 @@ final class Store: ObservableObject {
         await patch(["keys": [id: ""]])
     }
 
+    /// Cancel or resume quota tracking for one vendor. The credential is kept.
+    func setTracking(_ id: String, _ on: Bool) async {
+        await patch(["tracking": [id: on]])
+    }
+
     func connect(_ integration: IntegrationInfo) async {
         guard let url = URL(string: "\(base)/auth/connect"),
               let data = try? JSONSerialization.data(withJSONObject: ["integrationId": integration.id]) else { return }

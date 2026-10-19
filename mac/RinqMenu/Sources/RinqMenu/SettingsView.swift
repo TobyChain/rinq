@@ -196,19 +196,22 @@ struct ProviderRow: View {
                         .controlSize(.small)
                 }
                 HStack(spacing: 8) {
-                    Label(vendor.hasCredential ? "active" : "not connected",
-                          systemImage: vendor.hasCredential ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(vendor.hasCredential ? .green : .secondary)
+                    Label(vendor.statusText, systemImage: statusIcon)
+                        .foregroundStyle(vendor.tracking ? .green : .secondary)
                         .font(.system(size: 10))
                     Spacer()
+                    if vendor.hasCredential {
+                        Button(vendor.tracking ? "Stop tracking" : "Resume tracking") {
+                            Task { await store.setTracking(vendor.id, !vendor.tracking) }
+                        }
+                        .controlSize(.small)
+                    }
                     if vendor.hasKeySet {
                         Button("Clear key", role: .destructive) { Task { await store.clearKey(vendor.id) } }
                             .controlSize(.small)
                     }
                 }
-                Text(vendor.id == "codex"
-                     ? "Reads the Codex ChatGPT login automatically (no key needed)."
-                     : "Paste the API key from this provider's console. Stored locally in ~/.rinq/config.json, sent only to this vendor.")
+                Text(hint)
                     .font(.system(size: 10)).foregroundStyle(.secondary)
             }
             .padding(.vertical, 4)
@@ -217,10 +220,25 @@ struct ProviderRow: View {
                 Circle().fill(Palette.color(vendor.accent)).frame(width: 10, height: 10)
                 Text(vendor.label).font(.system(size: 12, weight: .medium))
                 Spacer()
-                Text(vendor.hasCredential ? "active" : "not connected")
+                Text(vendor.statusText)
                     .font(.system(size: 10))
-                    .foregroundStyle(vendor.hasCredential ? .green : .secondary)
+                    .foregroundStyle(vendor.tracking ? .green : .secondary)
             }
         }
+    }
+
+    private var statusIcon: String {
+        if vendor.tracking { return "checkmark.circle.fill" }
+        return vendor.hasCredential ? "pause.circle.fill" : "circle"
+    }
+
+    private var hint: String {
+        if vendor.trackingCancelled {
+            return "Quota tracking is cancelled. Rinq keeps the credential but stops fetching this vendor and hides its rings."
+        }
+        if vendor.id == "codex" {
+            return "Reads the Codex ChatGPT login automatically (no key needed)."
+        }
+        return "Paste the API key from this provider's console. Stored locally in ~/.rinq/config.json, sent only to this vendor."
     }
 }

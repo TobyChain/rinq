@@ -78,9 +78,18 @@ struct VendorInfo: Codable, Identifiable, Hashable {
     let label: String
     let accent: String?
     let kind: String?
-    var enabled: Bool
+    let tracking: Bool
     let hasCredential: Bool
     let hasKeySet: Bool
+
+    /// True when a credential is available but the user cancelled quota
+    /// tracking for this vendor, so its rings are hidden.
+    var trackingCancelled: Bool { hasCredential && !tracking }
+
+    var statusText: String {
+        if !hasCredential { return "not connected" }
+        return tracking ? "active" : "tracking off"
+    }
 }
 
 struct IntegrationInfo: Codable, Identifiable, Hashable {
