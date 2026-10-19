@@ -176,6 +176,11 @@ JSON responses disable HTTP caching and do not allow cross-origin browser reads.
 configuration presence, running state, non-secret account status, subscription
 entitlement state, and whether structured local usage logs were found.
 
+`authState` and `planState` are populated only for integrations whose local
+metadata Rinq parses; every other integration reports `unknown` because Rinq
+reads no account data for it. Consumers should treat `unknown` as "not
+reported" and omit it rather than presenting it as a problem state.
+
 Each entry carries `monitored`. `POST /config` accepts
 `{"monitored": {"<integration id>": false}}` to cancel monitoring and
 `true` to resume; cancellations are stored as the `integrationOff` list in

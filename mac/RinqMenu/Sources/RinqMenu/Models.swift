@@ -114,6 +114,20 @@ struct IntegrationInfo: Codable, Identifiable, Hashable {
     var isListed: Bool {
         !monitored || installed || configured || running || usageAvailable
     }
+
+    /// Account and plan state, or nil when Rinq read neither. Only integrations
+    /// whose local metadata Rinq parses report these; the rest stay "unknown",
+    /// which is omitted rather than shown as if something were wrong.
+    var accountSummary: String? {
+        var parts: [String] = []
+        if authState != "unknown" {
+            parts.append("login: \(authState == "not_connected" ? "not connected" : authState)")
+        }
+        if planState != "unknown" {
+            parts.append("plan: \(planState)")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "  ")
+    }
 }
 
 struct SettingsInfo: Codable {

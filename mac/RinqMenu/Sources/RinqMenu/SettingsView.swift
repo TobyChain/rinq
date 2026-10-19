@@ -182,12 +182,14 @@ private struct IntegrationRow: View {
     private var detailLines: some View {
         HStack(spacing: 8) {
             Text(integration.installed ? (integration.running ? "running" : "installed") : (integration.configured ? "configured" : "not installed"))
-            Text("login: \(integration.authState)")
-            Text("plan: \(integration.planState)")
             if integration.usageAvailable { Text("usage tracked") }
+            if let account = integration.accountSummary { Text(account) }
         }
         .font(.system(size: 9))
         .foregroundStyle(.secondary)
+        .help(integration.accountSummary == nil
+              ? "Rinq indexes this IDE's local usage. The IDE does not expose account or plan state to Rinq."
+              : "Account state read from this IDE's local metadata.")
         if integration.authState == "connected" && integration.quotaState != "available" {
             Text("Account detected. This vendor does not expose a verified quota value to Rinq yet.")
                 .font(.system(size: 9))

@@ -431,6 +431,40 @@ final class IntegrationMonitoringTests: XCTestCase {
     func testDetectedIdeIsListed() {
         XCTAssertTrue(integration(monitored: true, installed: true).isListed)
     }
+
+    func testUnreportedAccountStateIsOmitted() {
+        // Most IDEs expose no account metadata; the row must not claim
+        // "unknown" for a value Rinq never reads.
+        XCTAssertNil(integration(monitored: true, installed: true).accountSummary)
+    }
+
+    func testReportedAccountStateIsShown() {
+        var v = integration(monitored: true, installed: true)
+        v = IntegrationInfo(
+            id: v.id, label: v.label, vendor: v.vendor, monitored: v.monitored,
+            installed: v.installed, configured: v.configured, running: v.running,
+            version: v.version, bundleId: v.bundleId, appPath: v.appPath,
+            usageAvailable: true, usageAdapter: "zcode", authMethod: "oauth",
+            authState: "connected", planState: "available", planReasons: [],
+            quotaState: "unknown", usageSupport: "structured", quotaSupport: "plan_only",
+            connectURL: v.connectURL
+        )
+        XCTAssertEqual(v.accountSummary, "login: connected  plan: available")
+    }
+
+    func testSignedOutStateIsSpelledOut() {
+        var v = integration(monitored: true, installed: true)
+        v = IntegrationInfo(
+            id: v.id, label: v.label, vendor: v.vendor, monitored: v.monitored,
+            installed: v.installed, configured: v.configured, running: v.running,
+            version: v.version, bundleId: v.bundleId, appPath: v.appPath,
+            usageAvailable: false, usageAdapter: nil, authMethod: "none",
+            authState: "not_connected", planState: "unknown", planReasons: [],
+            quotaState: "unknown", usageSupport: "structured", quotaSupport: "plan_only",
+            connectURL: v.connectURL
+        )
+        XCTAssertEqual(v.accountSummary, "login: not connected")
+    }
 }
 
 final class ProviderTrackingLayoutTests: XCTestCase {
