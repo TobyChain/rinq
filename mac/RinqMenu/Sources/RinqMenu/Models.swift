@@ -83,13 +83,8 @@ struct VendorInfo: Codable, Identifiable, Hashable {
     let hasKeySet: Bool
 
     /// True when a credential is available but the user cancelled quota
-    /// tracking for this vendor. A cancelled vendor is shown exactly like one
-    /// that was never connected, so only the row's actions differ.
+    /// tracking for this vendor.
     var trackingCancelled: Bool { hasCredential && !tracking }
-
-    var statusText: String {
-        tracking ? "active" : "not connected"
-    }
 }
 
 struct IntegrationInfo: Codable, Identifiable, Hashable {

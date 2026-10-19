@@ -145,37 +145,9 @@ private struct IntegrationRow: View {
     let integration: IntegrationInfo
 
     var body: some View {
-        if integration.monitored {
-            monitoredBody
-        } else {
-            pausedBody
-        }
-    }
-
-    /// A cancelled IDE keeps one short row so monitoring can be resumed.
-    private var pausedBody: some View {
-        HStack(spacing: 8) {
-            Circle().fill(Color.secondary).frame(width: 8, height: 8)
-            Text(integration.label)
-                .font(.system(size: 12, weight: .medium))
-            Spacer()
-            Text("monitoring off")
-                .font(.system(size: 9))
-                .foregroundStyle(.secondary)
-            Button("Resume monitoring") {
-                Task { await store.setIntegrationMonitored(integration.id, true) }
-            }
-            .controlSize(.small)
-        }
-        .padding(.vertical, 4)
-    }
-
-    private var monitoredBody: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Circle()
-                    .fill(integration.installed ? (integration.running ? Color.green : Color.orange) : (integration.configured ? Color.blue : Color.secondary))
-                    .frame(width: 8, height: 8)
+            HStack(spacing: 8) {
+                Circle().fill(dotColor).frame(width: 8, height: 8)
                 Text(integration.label)
                     .font(.system(size: 12, weight: .medium))
                 if let version = integration.version {
@@ -183,38 +155,63 @@ private struct IntegrationRow: View {
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
+                Spacer(minLength: 6)
                 if integration.installed || integration.configured {
                     Button(integration.authState == "connected" ? "Open account" : "Connect account") {
                         Task { await store.connect(integration) }
                     }
                     .controlSize(.small)
                 }
-                Button("Stop monitoring") {
-                    Task { await store.setIntegrationMonitored(integration.id, false) }
-                }
-                .controlSize(.small)
+                Toggle("", isOn: monitored)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(.green)
+                    .controlSize(.small)
+                    .help(integration.monitored ? "Monitoring is on" : "Monitoring is off")
             }
-            HStack(spacing: 8) {
-                Text(integration.installed ? (integration.running ? "running" : "installed") : (integration.configured ? "configured" : "not installed"))
-                Text("login: \(integration.authState)")
-                Text("plan: \(integration.planState)")
-                if integration.usageAvailable { Text("usage tracked") }
-            }
-            .font(.system(size: 9))
-            .foregroundStyle(.secondary)
-            if integration.authState == "connected" && integration.quotaState != "available" {
-                Text("Account detected. This vendor does not expose a verified quota value to Rinq yet.")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-            }
-            if let quotaSupport = integration.quotaSupport, quotaSupport != "verified" {
-                Text("quota support: \(quotaSupport)")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
+            if integration.monitored {
+                detailLines
             }
         }
         .padding(.vertical, 4)
+    }
+
+    /// A cancelled IDE is not probed, so only its identity row is shown.
+    @ViewBuilder
+    private var detailLines: some View {
+        HStack(spacing: 8) {
+            Text(integration.installed ? (integration.running ? "running" : "installed") : (integration.configured ? "configured" : "not installed"))
+            Text("login: \(integration.authState)")
+            Text("plan: \(integration.planState)")
+            if integration.usageAvailable { Text("usage tracked") }
+        }
+        .font(.system(size: 9))
+        .foregroundStyle(.secondary)
+        if integration.authState == "connected" && integration.quotaState != "available" {
+            Text("Account detected. This vendor does not expose a verified quota value to Rinq yet.")
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+        }
+        if let quotaSupport = integration.quotaSupport, quotaSupport != "verified" {
+            Text("quota support: \(quotaSupport)")
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    private var dotColor: Color {
+        guard integration.monitored else { return .secondary }
+        if integration.installed {
+            return integration.running ? .green : .orange
+        }
+        return integration.configured ? .blue : .secondary
+    }
+
+    private var monitored: Binding<Bool> {
+        Binding(
+            get: { integration.monitored },
+            set: { on in Task { await store.setIntegrationMonitored(integration.id, on) } }
+        )
     }
 }
 
@@ -224,51 +221,71 @@ struct ProviderRow: View {
     @State private var expanded = false
 
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    SecureField("API key", text: Binding(
-                        get: { store.keyDraft(vendor.id) },
-                        set: { store.setDraft(vendor.id, $0) }))
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 11))
-                    Button("Save") { Task { await store.saveKey(vendor.id) } }
-                        .controlSize(.small)
-                }
-                HStack(spacing: 8) {
-                    Label(vendor.statusText, systemImage: statusIcon)
-                        .foregroundStyle(vendor.tracking ? .green : .secondary)
-                        .font(.system(size: 10))
-                    Spacer()
-                    if vendor.hasCredential {
-                        Button(vendor.tracking ? "Stop tracking" : "Resume tracking") {
-                            Task { await store.setTracking(vendor.id, !vendor.tracking) }
-                        }
-                        .controlSize(.small)
-                    }
-                    if vendor.hasKeySet {
-                        Button("Clear key", role: .destructive) { Task { await store.clearKey(vendor.id) } }
-                            .controlSize(.small)
-                    }
-                }
-                Text(hint)
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 4)
-        } label: {
-            HStack {
-                Circle().fill(Palette.color(vendor.accent)).frame(width: 10, height: 10)
-                Text(vendor.label).font(.system(size: 12, weight: .medium))
-                Spacer()
-                Text(vendor.statusText)
-                    .font(.system(size: 10))
-                    .foregroundStyle(vendor.tracking ? .green : .secondary)
-            }
+        VStack(alignment: .leading, spacing: 8) {
+            header
+            if expanded { details }
         }
     }
 
-    private var statusIcon: String {
-        vendor.tracking ? "checkmark.circle.fill" : "circle"
+    /// The whole bar toggles the details, so expanding does not depend on
+    /// hitting the disclosure triangle.
+    private var header: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Circle().fill(Palette.color(vendor.accent)).frame(width: 10, height: 10)
+                Text(vendor.label).font(.system(size: 12, weight: .medium))
+                Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                Spacer(minLength: 6)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { expanded.toggle() }
+
+            Toggle("", isOn: tracking)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(.green)
+                .controlSize(.small)
+                .disabled(!vendor.hasCredential)
+                .help(trackingHelp)
+        }
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                SecureField("API key", text: Binding(
+                    get: { store.keyDraft(vendor.id) },
+                    set: { store.setDraft(vendor.id, $0) }))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11))
+                Button("Save") { Task { await store.saveKey(vendor.id) } }
+                    .controlSize(.small)
+            }
+            if vendor.hasKeySet {
+                HStack {
+                    Button("Clear key", role: .destructive) { Task { await store.clearKey(vendor.id) } }
+                        .controlSize(.small)
+                    Spacer()
+                }
+            }
+            Text(hint)
+                .font(.system(size: 10)).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var tracking: Binding<Bool> {
+        Binding(
+            get: { vendor.tracking },
+            set: { on in Task { await store.setTracking(vendor.id, on) } }
+        )
+    }
+
+    private var trackingHelp: String {
+        if !vendor.hasCredential { return "Add a credential below to track this provider" }
+        return vendor.tracking ? "Quota tracking is on" : "Quota tracking is cancelled"
     }
 
     private var hint: String {

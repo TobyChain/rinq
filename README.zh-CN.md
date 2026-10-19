@@ -101,7 +101,7 @@ daemon 默认监听 `127.0.0.1:7788`。主要本地接口为 `/status`、`/usage
 | 小米 MiMo | 暂不支持 | API Key |
 | Claude API | 暂不支持 | Admin API Key |
 
-保存 API key 或检测到受支持的账户后，厂商自动激活，无需额外开关。之后可以在该厂商的 Providers 行里点击 **Stop tracking** 取消额度跟踪：凭据保留，Rinq 停止抓取并隐藏其圆环；点击 **Resume tracking** 或重新保存 key 即可恢复。没有可用凭据的厂商不会显示。余额类圆环使用配置中的 `balanceFull` 作为参考总额。GLM 的 Coding Plan Key 显示滚动的 5 小时和周请求限额，按量付费 Key 则回退为预付余额。Jina 显示其 Embeddings/Reranker/Reader/Search 共享 token 池；dashboard 主机由 `hosts.jina` 或 `JINA_DASHBOARD_HOST` 配置（默认 `embeddings-dashboard-api.jinaai.cn`，国际站用 `embeddings-dashboard-api.jina.ai`）。小米 MiMo 和 Claude API 暂无可用的实时额度接口，存在凭据时显示明确的“暂不支持”卡片。ChatGPT/Codex 依赖非官方订阅接口，仅适用于自行构建或侧载的应用，不应进入 App Store 构建。
+保存 API key 或检测到受支持的账户后，厂商自动激活。每个厂商行末尾是一个开关：绿色表示正在跟踪，灰色表示已停止，没有凭据的厂商无法打开。关闭后凭据保留，Rinq 停止抓取该厂商并隐藏其圆环；重新保存 key 会重新打开。点击厂商行任意位置即可展开 key 输入框。没有可用凭据的厂商不会显示。余额类圆环使用配置中的 `balanceFull` 作为参考总额。GLM 的 Coding Plan Key 显示滚动的 5 小时和周请求限额，按量付费 Key 则回退为预付余额。Jina 显示其 Embeddings/Reranker/Reader/Search 共享 token 池；dashboard 主机由 `hosts.jina` 或 `JINA_DASHBOARD_HOST` 配置（默认 `embeddings-dashboard-api.jinaai.cn`，国际站用 `embeddings-dashboard-api.jina.ai`）。小米 MiMo 和 Claude API 暂无可用的实时额度接口，存在凭据时显示明确的“暂不支持”卡片。ChatGPT/Codex 依赖非官方订阅接口，仅适用于自行构建或侧载的应用，不应进入 App Store 构建。
 
 ## 本地 token 用量
 
@@ -131,7 +131,7 @@ Rings 页面和网页 dashboard 顶部展示 Claude Code、Codex、TraeX、OMP�
 
 Hook 只向本机 daemon 发送事件，只持久化生命周期状态和安全元数据，不保存 prompt、回复、title 或 detail 文本。`SessionEnd` 会清除打开会话。原生弹窗和网页面板每 2 秒独立刷新会话，日志扫描缓存 5 秒，hook 事件会立即使缓存失效。也可以手动记录：`rinq push --state waiting --title "review needed" --session-id claude:abc --cwd ~/code/x`。
 
-Providers 页面列出检测到的 IDE，每个都可以 **Stop monitoring**，右上角的 **Refresh** 按钮会重新扫描本机。取消监控后 Rinq 不再探测该 IDE，只保留一行身份信息，可以随时恢复。集成能力按证据分级：ZCode 当前可以读取本地 OAuth/套餐状态和结构化 token 用量，但套餐 entitlement 本身不能作为已用/剩余额度圆环；MiMo Code/Desktop 和 Trae CN 可以检测安装状态，个人订阅余额在厂商提供稳定官方接口前保持 `unknown`。Copilot、Cursor、Windsurf、Gemini Code Assist、Zed、Cline、Roo Code 和 Kilo Code 也遵循同一规则，不从套餐价格、网页文字、浏览器 Cookie 或未公开接口推断实时剩余额度。
+Providers 页面列出检测到的 IDE，每个都带一个开关，右上角的 **Refresh** 按钮会重新扫描本机。关闭开关后 Rinq 不再探测该 IDE，不读取它的任何文件，行会压缩成一行身份信息，重新打开即可恢复。集成能力按证据分级：ZCode 当前可以读取本地 OAuth/套餐状态和结构化 token 用量，但套餐 entitlement 本身不能作为已用/剩余额度圆环；MiMo Code/Desktop 和 Trae CN 可以检测安装状态，个人订阅余额在厂商提供稳定官方接口前保持 `unknown`。Copilot、Cursor、Windsurf、Gemini Code Assist、Zed、Cline、Roo Code 和 Kilo Code 也遵循同一规则，不从套餐价格、网页文字、浏览器 Cookie 或未公开接口推断实时剩余额度。
 
 ## 配置
 

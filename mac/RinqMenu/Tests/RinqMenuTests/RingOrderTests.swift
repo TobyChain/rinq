@@ -389,26 +389,22 @@ final class VendorTrackingTests: XCTestCase {
         )
     }
 
-    func testCancelledVendorLooksTheSameAsOneThatWasNeverConnected() {
-        let cancelled = vendor(hasCredential: true, tracking: false)
-        let neverConnected = vendor(hasCredential: false, tracking: false)
-        XCTAssertTrue(cancelled.trackingCancelled)
-        XCTAssertFalse(neverConnected.trackingCancelled)
-        // Only the row actions differ; the status reads the same.
-        XCTAssertEqual(cancelled.statusText, neverConnected.statusText)
-        XCTAssertEqual(cancelled.statusText, "not connected")
+    func testCancelledVendorKeepsTheCredentialButIsNotTracked() {
+        let v = vendor(hasCredential: true, tracking: false)
+        XCTAssertFalse(v.tracking)
+        XCTAssertTrue(v.trackingCancelled)
     }
 
-    func testTrackedVendorReportsActive() {
+    func testTrackedVendorIsNotCancelled() {
         let v = vendor(hasCredential: true, tracking: true)
+        XCTAssertTrue(v.tracking)
         XCTAssertFalse(v.trackingCancelled)
-        XCTAssertEqual(v.statusText, "active")
     }
 
-    func testVendorWithoutCredentialIsNotConnected() {
+    func testVendorWithoutCredentialIsNeitherTrackedNorCancelled() {
         let v = vendor(hasCredential: false, tracking: false)
+        XCTAssertFalse(v.tracking)
         XCTAssertFalse(v.trackingCancelled)
-        XCTAssertEqual(v.statusText, "not connected")
     }
 }
 
