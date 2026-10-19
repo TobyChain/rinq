@@ -176,6 +176,14 @@ JSON responses disable HTTP caching and do not allow cross-origin browser reads.
 configuration presence, running state, non-secret account status, subscription
 entitlement state, and whether structured local usage logs were found.
 
+`version` is the installed release. App-based integrations read it from the
+bundle's `Info.plist`; a CLI without a bundle, currently Claude Code, resolves
+its launcher symlink into `versions/<version>` and falls back to the version
+recorded by its last auto-update. Rinq never runs the CLI to ask, because that
+can start its background services. `latestVersion` is the newest release the
+tool cached locally, and `updateAvailable` is true only when both values are
+known and the cached one is newer. Both are null when Rinq cannot tell.
+
 `authState` and `planState` are populated only for integrations whose local
 metadata Rinq parses; every other integration reports `unknown` because Rinq
 reads no account data for it. Consumers should treat `unknown` as "not

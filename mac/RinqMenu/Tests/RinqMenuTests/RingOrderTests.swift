@@ -416,7 +416,8 @@ final class IntegrationMonitoringTests: XCTestCase {
             bundleId: nil, appPath: nil, usageAvailable: false, usageAdapter: nil,
             authMethod: "unknown", authState: "unknown", planState: "unknown",
             planReasons: [], quotaState: "unknown", usageSupport: "structured",
-            quotaSupport: "plan_only", connectURL: "https://example.invalid/"
+            quotaSupport: "plan_only", connectURL: "https://example.invalid/",
+            latestVersion: nil, updateAvailable: nil
         )
     }
 

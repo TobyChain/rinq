@@ -488,6 +488,58 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(zcode["monitored"])
         self.assertTrue(zcode["installed"])
 
+    def test_claude_code_version_comes_from_the_native_install(self) -> None:
+        home = Path(tempfile.mkdtemp(prefix="rinq-claude-version-"))
+        target = home / ".local" / "share" / "claude" / "versions" / "9.9.9"
+        target.parent.mkdir(parents=True)
+        target.write_text("")
+        launcher = home / ".local" / "bin" / "claude"
+        launcher.parent.mkdir(parents=True)
+        launcher.symlink_to(target)
+        changelog = home / ".claude" / "cache" / "changelog.md"
+        changelog.parent.mkdir(parents=True)
+        changelog.write_text("# Changelog\n\n## 10.0.0\n\n- newer\n\n## 9.9.9\n")
+
+        app_root = Path(tempfile.mkdtemp(prefix="rinq-claude-apps-"))
+        result = integrations.discover_integrations(
+            home=home, app_dirs=(app_root,), process_text="claude"
+        )
+        claude = next(item for item in result if item["id"] == "claude-code")
+        self.assertEqual(claude["version"], "9.9.9")
+        self.assertEqual(claude["latestVersion"], "10.0.0")
+        self.assertTrue(claude["updateAvailable"])
+
+    def test_claude_code_reports_no_update_when_current(self) -> None:
+        home = Path(tempfile.mkdtemp(prefix="rinq-claude-current-"))
+        target = home / ".local" / "share" / "claude" / "versions" / "9.9.9"
+        target.parent.mkdir(parents=True)
+        target.write_text("")
+        launcher = home / ".local" / "bin" / "claude"
+        launcher.parent.mkdir(parents=True)
+        launcher.symlink_to(target)
+        changelog = home / ".claude" / "cache" / "changelog.md"
+        changelog.parent.mkdir(parents=True)
+        changelog.write_text("# Changelog\n\n## 9.9.9\n")
+
+        app_root = Path(tempfile.mkdtemp(prefix="rinq-claude-apps-"))
+        result = integrations.discover_integrations(
+            home=home, app_dirs=(app_root,), process_text="claude"
+        )
+        claude = next(item for item in result if item["id"] == "claude-code")
+        self.assertEqual(claude["version"], "9.9.9")
+        self.assertFalse(claude["updateAvailable"])
+
+    def test_integrations_without_a_local_version_source_report_none(self) -> None:
+        home = Path(tempfile.mkdtemp(prefix="rinq-no-version-"))
+        app_root = Path(tempfile.mkdtemp(prefix="rinq-no-version-apps-"))
+        result = integrations.discover_integrations(
+            home=home, app_dirs=(app_root,), process_text="", include_undetected=True
+        )
+        cursor = next(item for item in result if item["id"] == "cursor")
+        self.assertIsNone(cursor["version"])
+        self.assertIsNone(cursor["latestVersion"])
+        self.assertFalse(cursor["updateAvailable"])
+
     def test_cancel_and_resume_monitoring_patch(self) -> None:
         from rinq import settings_api
         cfg = {"keys": {}, "integrationOff": [], "ringOrder": []}

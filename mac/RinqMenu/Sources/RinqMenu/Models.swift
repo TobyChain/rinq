@@ -108,6 +108,10 @@ struct IntegrationInfo: Codable, Identifiable, Hashable {
     let usageSupport: String?
     let quotaSupport: String?
     let connectURL: String
+    /// Newest release the tool itself recorded locally, and whether it is
+    /// newer than the installed one. Both are absent when Rinq cannot tell.
+    let latestVersion: String?
+    let updateAvailable: Bool?
 
     /// Detected IDEs are listed, and so are cancelled ones: their row is the
     /// only place monitoring can be resumed.

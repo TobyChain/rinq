@@ -352,9 +352,57 @@ def _paused_integration(definition: dict[str, Any]) -> dict[str, Any]:
         "usageAdapter": None,
         "usageSupport": definition.get("usage_support", "none"),
         "quotaSupport": definition.get("quota_support", "unavailable"),
+        "latestVersion": None,
+        "updateAvailable": False,
         **_UNKNOWN_STATE,
         "connectURL": definition["connect_url"],
     }
+
+
+_CLAUDE_LAUNCHERS = (".local/bin/claude", ".claude/local/claude")
+_CHANGELOG_HEADING = re.compile(r"^##\s+(\d+\.\d+\.\d+)\s*$", re.MULTILINE)
+_CHANGELOG_HEAD_BYTES = 4096
+
+
+def _version_key(value: str) -> tuple[int, ...]:
+    """Order two version strings by their numeric components."""
+    return tuple(int(part) for part in re.findall(r"\d+", value))
+
+
+def _claude_code_versions(home: Path) -> tuple[str | None, str | None]:
+    """Return (installed, latest) Claude Code versions read from local files.
+
+    Claude Code ships as a CLI, so there is no app bundle to read. The native
+    installer keeps each release under `versions/<version>` and points a
+    launcher at it; the client also caches the release notes it fetched, whose
+    newest heading is the latest release it knows about. Rinq never runs the
+    CLI to ask, because that can start its background services.
+    """
+    installed = None
+    for relative in _CLAUDE_LAUNCHERS:
+        try:
+            target = (home / relative).resolve(strict=True)
+        except OSError:
+            continue
+        if target.parent.name == "versions":
+            installed = target.name
+            break
+    if installed is None:
+        record = _read_json(home / ".claude" / ".last-update-result.json") or {}
+        recorded = record.get("version_to")
+        installed = recorded if isinstance(recorded, str) and recorded else None
+
+    latest = None
+    changelog = home / ".claude" / "cache" / "changelog.md"
+    try:
+        with changelog.open(encoding="utf-8", errors="replace") as stream:
+            head = stream.read(_CHANGELOG_HEAD_BYTES)
+    except OSError:
+        head = ""
+    match = _CHANGELOG_HEADING.search(head)
+    if match:
+        latest = match.group(1)
+    return installed, latest
 
 
 def _integration(definition: dict[str, Any], app_dirs: tuple[Path, ...], home: Path, process_text: str) -> dict[str, Any]:
@@ -367,6 +415,12 @@ def _integration(definition: dict[str, Any], app_dirs: tuple[Path, ...], home: P
     version = None
     if app:
         bundle_id, version = _bundle_metadata(app)
+    latest_version = None
+    if definition["id"] == "claude-code":
+        version, latest_version = _claude_code_versions(home)
+    update_available = bool(
+        version and latest_version and _version_key(latest_version) > _version_key(version)
+    )
     state = _zcode_state(home) if definition["id"] == "zcode" else dict(_UNKNOWN_STATE)
     return {
         "id": definition["id"],
@@ -383,6 +437,8 @@ def _integration(definition: dict[str, Any], app_dirs: tuple[Path, ...], home: P
         "usageAdapter": definition["id"] if (state["usageAvailable"] or _has_usage_path(definition, home)) else None,
         "usageSupport": definition.get("usage_support", "none"),
         "quotaSupport": definition.get("quota_support", "unavailable"),
+        "latestVersion": latest_version,
+        "updateAvailable": update_available,
         "authMethod": state["authMethod"],
         "authState": state["authState"],
         "planState": state["planState"],

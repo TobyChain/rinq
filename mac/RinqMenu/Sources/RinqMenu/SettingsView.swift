@@ -155,6 +155,15 @@ private struct IntegrationRow: View {
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
+                if integration.updateAvailable == true {
+                    Text("update")
+                        .font(.system(size: 8, weight: .semibold))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.orange.opacity(0.18), in: Capsule())
+                        .foregroundStyle(.orange)
+                        .help("A newer version is available: \(integration.latestVersion ?? "")")
+                }
                 Spacer(minLength: 6)
                 Toggle("", isOn: monitored)
                     .labelsHidden()
