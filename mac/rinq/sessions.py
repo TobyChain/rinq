@@ -349,12 +349,15 @@ def _parse_claude(tail: _Tail, path: Path, mtime: int, now_ts: int) -> dict[str,
         project = Path(cwd).name or project
     age = max(0, now_ts - mtime)
     state = _claude_state(terminal, open_tool, subagent_count > 0, failed, age)
-    if pending_question is not None and state not in ("failed", "completed"):
+    if pending_question is not None and state != "failed":
         # An unanswered AskUserQuestion call is a prompt for the user, so the
-        # honest display state is waiting rather than running. The transcript
-        # goes quiet while the agent waits, so the usual 10-minute visibility
-        # window would drop the question; an exact question keeps the row
-        # alive until it is answered (or ages out of the 24h scan window).
+        # honest display state is waiting rather than running. Claude Code
+        # normally ends the turn right after asking (a success result lands
+        # in the transcript), so a completed verdict must not hide the row;
+        # only a real failure does. The transcript goes quiet while the agent
+        # waits, so the usual 10-minute visibility window would drop the
+        # question anyway; an exact question keeps the row alive until the
+        # tool result arrives (or it ages out of the 24h scan window).
         state = "waiting"
         is_open = True
     else:

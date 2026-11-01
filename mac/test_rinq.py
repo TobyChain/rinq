@@ -1252,12 +1252,28 @@ class SessionMonitoringTests(unittest.TestCase):
         self.home = tempfile.mkdtemp(prefix="rinq-ide-home-")
         self.previous_home = os.environ.get("RINQ_IDE_HOME")
         os.environ["RINQ_IDE_HOME"] = self.home
+        self.claude_root = os.path.join(self.home, "claude", "projects")
+        self.previous_claude = os.environ.get("CLAUDE_CONFIG_DIR")
+        os.environ["CLAUDE_CONFIG_DIR"] = os.path.join(self.home, "claude")
 
     def tearDown(self) -> None:
         if self.previous_home is None:
             os.environ.pop("RINQ_IDE_HOME", None)
         else:
             os.environ["RINQ_IDE_HOME"] = self.previous_home
+        if self.previous_claude is None:
+            os.environ.pop("CLAUDE_CONFIG_DIR", None)
+        else:
+            os.environ["CLAUDE_CONFIG_DIR"] = self.previous_claude
+
+    def _write_claude(self, encoded_cwd: str, session_uuid: str, rows: list, mtime_ts: int) -> None:
+        directory = os.path.join(self.claude_root, encoded_cwd)
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, session_uuid + ".jsonl")
+        with open(path, "w", encoding="utf-8") as stream:
+            for row in rows:
+                stream.write(json.dumps(row) + "\n")
+        os.utime(path, (mtime_ts, mtime_ts))
 
     def _write_workspace(
         self,
@@ -1457,6 +1473,29 @@ class SessionMonitoringTests(unittest.TestCase):
         from rinq.remote_sessions import RemoteSessionRefresher
 
         now = int(time.time())
+
+        # A local Claude Code session waiting on an AskUserQuestion: the turn
+        # normally ends with a success result, and the row must stay visible
+        # as waiting until the tool result arrives.
+        self._write_claude("-tmp-demo-q", "uuid-q", [
+            {"type": "user", "sessionId": "s-q", "cwd": "/tmp/demo-q", "timestamp": now - 120,
+             "message": {"role": "user", "content": [{"type": "text", "text": "choose an approach"}]}},
+            {"type": "assistant", "sessionId": "s-q", "cwd": "/tmp/demo-q", "timestamp": now - 60,
+             "message": {"model": "claude-x", "stop_reason": "end_turn", "content": [
+                 {"type": "text", "text": "Before I proceed:"},
+                 {"type": "tool_use", "name": "AskUserQuestion", "input": {"questions": [
+                     {"question": "Which approach?",
+                      "options": [{"label": "Option A"}, {"label": "Option B"}]}]}}]}},
+            {"type": "result", "sessionId": "s-q", "cwd": "/tmp/demo-q", "timestamp": now - 59,
+             "subtype": "success"},
+        ], now - 60)
+        snapshot = sessions.build_sessions({}, now)
+        asked = next(s for s in snapshot["sessions"] if s["id"] == "claude:s-q")
+        self.assertEqual(asked["state"], "waiting")
+        self.assertTrue(asked["isOpen"])
+        self.assertEqual(asked["question"]["text"], "Which approach?")
+        self.assertEqual(asked["question"]["options"], ["Option A", "Option B"])
+
         probe = [self._claude_probe_entry(now)]
         refresher = RemoteSessionRefresher()
         try:
