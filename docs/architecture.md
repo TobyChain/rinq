@@ -37,9 +37,22 @@ content is excluded from that index.
 
 `mac/rinq/sessions.py` reads bounded JSONL tails for Claude Code, Codex, TraeX,
 OMP, and Pi. It creates a one-line summary in memory, then overlays lifecycle
-state from hooks. `/sessions` returns at most twelve sessions ordered by CLI,
+state from hooks. `mac/rinq/ide_sessions.py` adds VSCode-family IDE chats by
+capability-detecting the per-workspace chat store (`chat.ChatSessionStore.index`
+plus `chatSessions/*.json`) in a read-only SQLite pass; products without that
+layout are skipped, and products cancelled in Integrations are not read at all.
+`mac/rinq/remote_sessions.py` extends the same parsers to hosts listed in
+`config.json`'s `sessionRemotes`: a background refresher pipes a read-only
+probe script over SSH to each host serially (BatchMode, one ControlMaster
+socket per host), parses the returned transcript tails with the local
+parsers, and keeps the last good snapshot while a host is unreachable.
+`/sessions` returns at most twelve sessions ordered by CLI,
 app, and running / subagents running / waiting / idling. `SessionEnd` removes
-a session. Without lifecycle hooks, visibility is inferred from recent log
+a session, and `POST /sessions/close` lets the macOS panel hide any session via
+the same tombstone (the agent process keeps running). Claude Code sessions with
+an unanswered `AskUserQuestion` call report `waiting` plus a `question` payload
+so the panel can show the prompt and options. Without lifecycle hooks,
+visibility is inferred from recent log
 activity rather than terminal-process inspection; see `schema/status.md` for
 time limits. Hook records contain state and metadata, never prompt or reply text.
 

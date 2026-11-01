@@ -24,7 +24,7 @@ Rinq 是本地优先的 AI 配额和本地编码 Agent 用量监视器。它把�
 
 ## 当前代码地图
 
-- `mac/rinq/`：Python daemon、CLI、HTTP API、配置、状态、提供商采集、本地用量索引、IDE 集成、事件、push 和终端 Agent 会话扫描（`sessions.py`）。
+- `mac/rinq/`：Python daemon、CLI、HTTP API、配置、状态、提供商采集、本地用量索引、IDE 集成、事件、push 和终端 Agent 会话扫描（`sessions.py`）；`ide_sessions.py` 以能力检测方式读取 VSCode 家 IDE 的每工作区聊天存储；`remote_sessions.py` 通过只读 SSH 探针监控远程主机上的 agent 会话。
 - `mac/RinqMenu/`：macOS 13+ SwiftUI 菜单栏客户端。`Store.swift` 是 daemon API 与 UI 状态的边界，`AppMain.swift` 驱动 30 秒刷新和菜单栏渲染，`QuotaAlerts.swift` 负责配额告警状态，`AgentSessionsView.swift` 渲染终端 Agent 状态条。
 - `app/Shared/`：iOS/watchOS 共用模型、视图、设置和直接提供商采集。
 - `app/iOS/`、`app/Watch/`：应用入口。
@@ -46,7 +46,7 @@ Rinq 是本地优先的 AI 配额和本地编码 Agent 用量监视器。它把�
 | daemon HTTP API | `mac/rinq/server.py` | `mac/RinqMenu/.../Store.swift`、CLI、本地 dashboard | `/status`、`/sessions`、`/usage`、`/config`、`/integrations`、`/event`、`/auth/connect` |
 | 配置 | `mac/rinq/config.py`、`settings_api.py` | collectors、server、macOS Settings | 公共配置不得回传明文密钥 |
 | 本地用量采集 | `mac/rinq/usage.py` 的 source adapter 和增量 SQLite 索引 | `/usage`、macOS Usage UI | 只持久化计数和来源元数据 |
-| 本地 Agent 会话 | `mac/rinq/sessions.py` 从 JSONL 尾部重建状态；`events.py` 写入 hook 覆盖和关闭 tombstone | `/sessions`、`/status.agents`、Rings 会话面板、网页 dashboard | 只显示 `isOpen` 会话，state 排序为 `running/subagents_running/waiting/idle`；会话文本只在内存中返回一行摘要，不持久化 |
+| 本地 Agent 会话 | `mac/rinq/sessions.py` 从 JSONL 尾部重建状态；`ide_sessions.py` 能力检测读取 VSCode 家 IDE 聊天存储；`remote_sessions.py` 以 SSH 探针串行采集远程会话；`events.py` 写入 hook 覆盖和关闭 tombstone | `/sessions`、`/sessions/close`、`/status.agents`、Rings 会话面板、网页 dashboard | 只显示 `isOpen` 会话，state 排序为 `running/subagents_running/waiting/idle`；未回答的 AskUserQuestion 带 `question`，远程会话带 `remote` 主机标识；会话文本只在内存中返回一行摘要，不持久化 |
 | 本地 IDE 集成 | `mac/rinq/integrations.py` | `/config`/`/integrations`、Settings UI | 安装、认证、套餐、实时配额是不同能力状态；`/auth/connect` 只打开厂商网页，不代表 Rinq 能登录本地 CLI 或 IDE，UI 文案不得写成连接；`monitored` 为 false 的 IDE 不探测、只保留身份行，取消记录写入 `config.json` 的 `integrationOff` |
 | Agent 事件 | CLI/hook -> `events.py` -> `state.py` | `/status`、`/sessions`、dashboard、push | `started/completed/failed/waiting`；带 `sessionId` 时同时覆盖会话状态 |
 | Apple 共享模型 | `app/Shared/Models.swift` 和 Provider 输出 | iOS、watchOS、Widget | 与 `schema/status.md` 的 ring 语义一致 |
@@ -66,10 +66,12 @@ Rinq 是本地优先的 AI 配额和本地编码 Agent 用量监视器。它把�
 ### 本地会话一览循环
 
 1. `sessions.py` 扫描 Claude Code、Codex、TraeX、OMP、Pi 的 JSONL 尾部（最近 24 小时内最新的 40 个候选，每个读取最后 96KB 和最多 80 条尾部记录）。
-2. 依据未闭合工具调用（shell 15 分钟、其他 120 秒宽限）、回合结束和错误推断 state，并生成单行摘要。
-3. `POST /event` 携带 `sessionId` 时写入 `state.agentSessions`；`closed` 写入轻量 tombstone，读取期过滤已关闭日志。
-4. `/sessions` 返回快照（5 秒缓存），只返回最多 12 条打开会话；`build_status()` 用其 running/waiting 计数覆盖 `/status.agents`。
-5. prompt 和助手文本只在内存中重建，不写入磁盘、SQLite 或状态文件。
+2. 依据未闭合工具调用（shell 15 分钟、其他 120 秒宽限）、回合结束和错误推断 state，并生成单行摘要。未闭合的 `AskUserQuestion` 映射为 `waiting` 并附带 `question`（问题 + 最多 4 个选项标签）。
+3. `ide_sessions.py` 只读扫描 VSCode 家产品表（VSCode、Insiders、VSCodium、Trae、Cursor、Windsurf）的 `workspaceStorage`：仅解析带 `chat.ChatSessionStore.index` 的工作区，按 mtime 宽限推断 state；`integrationOff` 中的产品完全不读取。
+4. `remote_sessions.py` 对 `config.json` 的 `sessionRemotes` 串行执行只读 SSH 探针（BatchMode、ControlMaster 复用、45 秒一轮、20 秒超时），远程主机不可达时保留上次快照并在 `remotes` 里上报 `unreachable`。
+5. `POST /event` 携带 `sessionId` 时写入 `state.agentSessions`；`closed` 与 `POST /sessions/close` 共用 tombstone，读取期过滤已关闭日志（关闭只在 Rinq 中隐藏会话，不终止 Agent）。
+6. `/sessions` 返回快照（5 秒缓存），只返回最多 12 条打开会话；`build_status()` 用其 running/waiting 计数覆盖 `/status.agents`。
+7. prompt 和助手文本只在内存中重建，不写入磁盘、SQLite 或状态文件。
 
 ### 本地用量索引循环
 

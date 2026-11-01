@@ -38,6 +38,13 @@ struct Status: Codable {
     let updatedAt: Int?
 }
 
+/// A question the agent is waiting on (e.g. an unanswered AskUserQuestion).
+/// Rebuilt in memory on every scan; never persisted.
+struct SessionQuestion: Codable, Hashable {
+    let text: String
+    let options: [String]
+}
+
 struct AgentSession: Codable, Identifiable, Hashable {
     let id: String
     let app: String
@@ -53,6 +60,9 @@ struct AgentSession: Codable, Identifiable, Hashable {
     let startedAt: Int?
     let updatedAt: Int?
     let source: String?
+    let question: SessionQuestion?
+    /// SSH host id when the session runs on a monitored remote machine.
+    let remote: String?
 }
 
 struct SessionCounts: Codable, Hashable {

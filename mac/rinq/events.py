@@ -75,10 +75,7 @@ def apply_event(state: dict[str, Any], ev: dict[str, Any], cfg: dict) -> dict[st
 
     sessions = state.setdefault("agentSessions", {})
     if session_id and es == "closed":
-        sessions.pop(session_id, None)
-        closed_sessions[session_id] = event_at
-        for sid in [sid for sid, at in closed_sessions.items() if event_at - int(at or 0) > 86400]:
-            closed_sessions.pop(sid, None)
+        close_session(state, session_id, event_at)
     elif session_id:
         if es == "started":
             closed_sessions.pop(session_id, None)
@@ -115,4 +112,20 @@ def apply_event(state: dict[str, Any], ev: dict[str, Any], cfg: dict) -> dict[st
         msg = detail or title
         push_message(cfg, f"AI {es}", f"{title}: {msg}" if detail and detail != title else title)
 
+    return state
+
+
+def close_session(state: dict[str, Any], session_id: str, event_at: int | None = None) -> dict[str, Any]:
+    """Retire one session id: drop its hook record and write a tombstone.
+
+    The tombstone suppresses later log flushes and late overlay events for
+    this id; an explicit ``started`` event reopens it. This does not touch the
+    underlying agent process or IDE chat window.
+    """
+    at = event_at if event_at is not None else now()
+    state.setdefault("agentSessions", {}).pop(session_id, None)
+    closed_sessions = state.setdefault("closedSessions", {})
+    closed_sessions[session_id] = at
+    for sid in [sid for sid, ts in closed_sessions.items() if at - int(ts or 0) > 86400]:
+        closed_sessions.pop(sid, None)
     return state

@@ -138,9 +138,12 @@ JSON responses disable HTTP caching and do not allow cross-origin browser reads.
       "summary": "using Bash",
       "startedAt": 1757299000,
       "updatedAt": 1757300000,
-      "source": "log"
+      "source": "log",
+      "question": {"text": "Which approach?", "options": ["A", "B"]},
+      "remote": "gpu-248"
     }
-  ]
+  ],
+  "remotes": [{"id": "gpu-248", "state": "ok"}, {"id": "gpu-243", "state": "unreachable"}]
 }
 ```
 
@@ -156,7 +159,35 @@ JSON responses disable HTTP caching and do not allow cross-origin browser reads.
   96KB and up to 80 trailing entries. At most 12 open sessions are returned,
   grouped by CLI (`adapter`) and then
   ordered by running, subagents running, waiting, idling.
-- `adapter` is one of `claude_code`, `codex`, `traex`, `omp`, `pi`.
+- `adapter` is one of `claude_code`, `codex`, `traex`, `omp`, `pi`,
+  `vscode_chat`.
+- `question` is optional. It carries an unanswered
+  agent prompt — today an unresolved Claude Code `AskUserQuestion` call with
+  up to four option labels; it is rebuilt in memory and never persisted.
+  `POST /sessions/close` accepts `{"id": "<session id>"}` from loopback
+  clients only, drops the hook record, and writes a tombstone that hides the
+  session from later snapshots. Closing hides the row in Rinq; it does not
+  stop the agent process or close the IDE chat.
+- `remote` is set when the session was collected from a host configured in
+  `config.json`'s `sessionRemotes` (a plain ssh destination or an
+  `{"id", "destination"}` entry). The id is prefixed with the remote id
+  (`<remote>:<adapter>:<session>`), so tombstones stay per host. The daemon
+  pipes a read-only probe script to `python3 -` on each host serially every
+  45 seconds: BatchMode only (no interactive auth), an 8s connect timeout, a
+  20s probe timeout, and one ControlMaster socket under `~/.rinq/ssh/` per
+  host so scans reuse a single connection. Probes read the same transcript
+  roots as the local scanner; only state and one-line summaries are derived,
+  never persisted. An unreachable host keeps its last good sessions visible
+  and reports `state: "unreachable"` in the snapshot's `remotes` array until
+  a scan succeeds. Hosts sharing one filesystem (an NFS home, for example)
+  report the same transcript through different host ids; sessions are
+  deduplicated across hosts by their underlying transcript identity, and the
+  copy from the host with the freshest activity wins and carries that host's
+  id. Destination aliases with an `~/.ssh/config` RemoteCommand
+  cannot run the probe; configure the `user@host` form instead. Remote state
+  inference compares remote file mtimes against the local clock, so hosts are
+  assumed NTP-synchronized; a skewed clock stretches or shortens the grace
+  windows.
 - `isOpen` identifies a session reported open by a fresh hook or inferred open
   from recent log activity. It is not a terminal-process liveness check. `source`
   is `log` (reconstructed from transcript tails) or `hook`
@@ -169,6 +200,22 @@ JSON responses disable HTTP caching and do not allow cross-origin browser reads.
 - Default log roots are `~/.claude/projects`, `~/.codex/sessions`,
   `~/.trae/cli/sessions`, `~/.omp/agent/sessions`, and `~/.pi/agent/sessions`;
   the same client env overrides as `/usage` apply.
+- `vscode_chat` sessions come from the VSCode-family chat store:
+  `User/workspaceStorage/<hash>/state.vscdb` (`chat.ChatSessionStore.index`)
+  plus `chatSessions/<id>.json`, read with a read-only SQLite connection.
+  Workspaces touched in the last week and chats updated within 24 hours are
+  considered. Editors are discovered from a product table (VSCode, Insiders,
+  VSCodium, Trae, Cursor, Windsurf); a workspace is parsed only when it uses
+  the VSCode chat index layout, so editors with different storage shapes are
+  skipped rather than misread. Cancellations in Integrations stop reads for
+  products that have an integration entry (Trae, Cursor, Windsurf); VSCode,
+  Insiders, and VSCodium have no such entry yet, so reads for them can only
+  be stopped by hand-editing `integrationOff` (a later Settings save may
+  clear it). IDE state is mtime-derived: active within 120s
+  is running, an unanswered user turn beyond that is a waiting estimate, a
+  finished turn idles. Products cancelled in Integrations (`integrationOff`)
+  are not read. An `RINQ_IDE_HOME` env override relocates the search root for
+  diagnosis and tests.
 
 ## Local IDE integrations
 

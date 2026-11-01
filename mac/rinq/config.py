@@ -36,6 +36,14 @@ DEFAULT_CONFIG = {
     # IDE keeps its identity row but is not probed, so Rinq reads none of its
     # files. Removing an id resumes monitoring.
     "integrationOff": [],
+    # SSH destinations whose local agent sessions Rinq also watches. Each
+    # entry is a plain ssh destination string ("user@host", an IP, or an
+    # ~/.ssh/config alias without a RemoteCommand) or {"id", "destination"}.
+    # Scans are serial, read-only, and reuse one ControlMaster connection per
+    # host. A probe ships the recent transcript tails back over SSH; they are
+    # parsed locally, in memory only, and just state plus a one-line summary
+    # is kept.
+    "sessionRemotes": [],
     # Order ring ids are displayed (rings, bars, and the dashboard). Anything
     # not listed follows in default order.
     "ringOrder": ["codex-5h", "codex-week", "minimax-5h", "minimax-week",

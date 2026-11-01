@@ -1239,5 +1239,278 @@ class SessionOverviewTests(unittest.TestCase):
         self.assertNotIn("claude:s8", [session["id"] for session in snapshot["sessions"]])
 
 
+class SessionMonitoringTests(unittest.TestCase):
+    """Core coverage: IDE chat discovery, close tombstones, and SSH remotes.
+
+    Five focused tests replace the earlier per-feature suites; each keeps the
+    assertions that guard user-visible behavior (what joins the panel, what
+    hides it, what happens when a host is unreachable).
+    """
+
+    def setUp(self) -> None:
+        self.cfg = {"push": {}}
+        self.home = tempfile.mkdtemp(prefix="rinq-ide-home-")
+        self.previous_home = os.environ.get("RINQ_IDE_HOME")
+        os.environ["RINQ_IDE_HOME"] = self.home
+
+    def tearDown(self) -> None:
+        if self.previous_home is None:
+            os.environ.pop("RINQ_IDE_HOME", None)
+        else:
+            os.environ["RINQ_IDE_HOME"] = self.previous_home
+
+    def _write_workspace(
+        self,
+        user_dir: str,
+        workspace_hash: str,
+        folder_uri: str,
+        entries: dict | None,
+        chat_files: dict | None = None,
+    ) -> Path:
+        ws = Path(self.home) / user_dir / "workspaceStorage" / workspace_hash
+        ws.mkdir(parents=True, exist_ok=True)
+        (ws / "workspace.json").write_text(json.dumps({"folder": folder_uri}))
+        db = sqlite3.connect(ws / "state.vscdb")
+        db.execute("CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)")
+        if entries is not None:
+            db.execute(
+                "INSERT INTO ItemTable VALUES (?, ?)",
+                ("chat.ChatSessionStore.index", json.dumps({"version": 1, "entries": entries})),
+            )
+        db.commit()
+        db.close()
+        chat_dir = ws / "chatSessions"
+        chat_dir.mkdir(exist_ok=True)
+        for name, payload in (chat_files or {}).items():
+            (chat_dir / name).write_text(json.dumps(payload))
+        return ws
+
+    def _answered_chat(self, session_id: str, now_ms: int, question: str) -> dict:
+        return {
+            "version": 3, "sessionId": session_id, "creationDate": now_ms - 3_600_000,
+            "lastMessageDate": now_ms,
+            "requests": [{
+                "requestId": "r1", "timestamp": now_ms - 60_000,
+                "message": {"text": question},
+                "responseId": "resp1",
+                "response": [{"kind": "markdownContent", "content": {"value": "Working on it."}}],
+                "modelId": "copilot/claude-sonnet-4.5",
+            }],
+        }
+
+    def _claude_probe_entry(self, now_ts: int) -> dict:
+        rows = [
+            {"type": "user", "sessionId": "r1", "cwd": "/work/lab", "timestamp": now_ts - 60,
+             "message": {"role": "user", "content": [{"type": "text", "text": "train the model"}]}},
+            {"type": "assistant", "sessionId": "r1", "cwd": "/work/lab", "timestamp": now_ts - 30,
+             "message": {"model": "claude-x", "content": [{"type": "text", "text": "starting epoch 1"}]}},
+        ]
+        return {
+            "adapter": "claude_code",
+            "root": "/root/.claude/projects",
+            "path": "/root/.claude/projects/-work-lab/abc.jsonl",
+            "mtime": now_ts - 30,
+            "lines": [json.dumps(row) for row in rows],
+        }
+
+    def test_vscode_chats_join_snapshot_and_stale_or_plain_workspaces_do_not(self) -> None:
+        import time
+        from rinq import sessions
+
+        now = int(time.time())
+        sid = "11111111-2222-3333-4444-555555555555"
+        stale = "22222222-2222-3333-4444-555555555555"
+        self._write_workspace(
+            "Library/Application Support/Code/User", "hash1",
+            "file:///Users/me/demo-project",
+            {sid: {"sessionId": sid, "title": "Fix login", "lastMessageDate": now * 1000,
+                   "isEmpty": False}},
+            {f"{sid}.json": self._answered_chat(sid, now * 1000, "fix the login bug")},
+        )
+        self._write_workspace(
+            "Library/Application Support/Code/User", "hash2",
+            "file:///Users/me/old-project",
+            {stale: {"sessionId": stale, "title": "Old chat",
+                     "lastMessageDate": (now - 25 * 3600) * 1000, "isEmpty": False}},
+        )
+        # Capability detection: a workspace without the chat index is skipped.
+        self._write_workspace(
+            "Library/Application Support/Code/User", "hash3",
+            "file:///tmp/plain", entries=None,
+        )
+
+        snapshot = sessions.build_sessions({}, now)
+        shown = {s["id"]: s for s in snapshot["sessions"]}
+        self.assertIn(f"vscode:{sid}", shown)
+        session = shown[f"vscode:{sid}"]
+        self.assertEqual(session["app"], "VSCode")
+        self.assertEqual(session["adapter"], "vscode_chat")
+        self.assertEqual(session["project"], "demo-project")
+        self.assertEqual(session["cwd"], "/Users/me/demo-project")
+        self.assertEqual(session["summary"], "Working on it.")
+        self.assertEqual(session["model"], "copilot/claude-sonnet-4.5")
+        self.assertTrue(session["isOpen"])
+        self.assertIsNone(session.get("open"))
+        self.assertNotIn(f"vscode:{stale}", shown)
+        self.assertFalse([s for s in snapshot["sessions"] if s["adapter"] == "vscode_chat"
+                          and s["id"] not in (f"vscode:{sid}",)])
+
+    def test_close_tombstone_and_integration_off_hide_sessions(self) -> None:
+        import time
+        from rinq import config, events, sessions, state as state_mod
+
+        now = int(time.time())
+        sid = "33333333-2222-3333-4444-555555555555"
+        self._write_workspace(
+            "Library/Application Support/Code/User", "hash4",
+            "file:///Users/me/closeme",
+            {sid: {"sessionId": sid, "title": "Closing chat", "lastMessageDate": now * 1000,
+                   "isEmpty": False}},
+            {f"{sid}.json": self._answered_chat(sid, now * 1000, "open chat")},
+        )
+        state = state_mod.blank_state()
+        self.assertIn(f"vscode:{sid}", [s["id"] for s in sessions.build_sessions(state, now)["sessions"]])
+
+        events.close_session(state, f"vscode:{sid}", now)
+        closed = sessions.build_sessions(state, now)
+        self.assertNotIn(f"vscode:{sid}", [s["id"] for s in closed["sessions"]])
+
+        cfg_path = Path(os.environ["RINQ_HOME"]) / "config.json"
+        original = cfg_path.read_text() if cfg_path.exists() else None
+        cfg_path.write_text(json.dumps({"integrationOff": ["vscode"]}))
+        try:
+            hidden = sessions.build_sessions({}, now)
+            self.assertNotIn(f"vscode:{sid}", [s["id"] for s in hidden["sessions"]])
+        finally:
+            if original is None:
+                config.CONFIG_PATH.unlink(missing_ok=True)
+            else:
+                cfg_path.write_text(original)
+
+    def test_probe_parses_prefixes_dedupes_and_rejects_bad_rows(self) -> None:
+        import time
+        from rinq.remote_sessions import _sessions_from_probe, collect_remote_sessions
+
+        now = int(time.time())
+        sessions = _sessions_from_probe([self._claude_probe_entry(now)], "gpu-248", now)
+        self.assertEqual(len(sessions), 1)
+        self.assertTrue(sessions[0]["id"].startswith("gpu-248:claude:"))
+        self.assertEqual(sessions[0]["remote"], "gpu-248")
+        self.assertEqual(sessions[0]["project"], "lab")
+        self.assertEqual(sessions[0]["state"], "running")
+
+        # Hosts sharing one filesystem report the same transcript; the host
+        # with the freshest activity wins and only one row is shown.
+        remotes = [
+            {"id": "lab-240", "destination": "192.168.0.240"},
+            {"id": "lab-248", "destination": "192.168.0.248"},
+        ]
+        older = self._claude_probe_entry(now)
+        older["mtime"] = now - 600
+        merged, status = collect_remote_sessions(
+            remotes, now,
+            runner=lambda d: json.dumps([older if "248" in d else self._claude_probe_entry(now)]),
+        )
+        self.assertEqual(len(merged), 1)
+        self.assertTrue(merged[0]["id"].startswith("lab-240:"))
+        self.assertEqual(status, [{"id": "lab-240", "state": "ok"}, {"id": "lab-248", "state": "ok"}])
+
+        bad = self._claude_probe_entry(now)
+        bad["adapter"] = "unknown_tool"
+        self.assertEqual(_sessions_from_probe([bad], "h", now), [])
+        self.assertEqual(_sessions_from_probe(["not-a-dict"], "h", now), [])
+        self.assertEqual(_sessions_from_probe({"bad": 1}, "h", now), [])
+
+    def test_remote_config_normalizes_and_unreachable_hosts_degrade(self) -> None:
+        import time
+        from rinq.remote_sessions import (
+            PROBE_SCRIPT,
+            collect_remote_sessions,
+            normalize_remotes,
+        )
+
+        self.assertEqual(normalize_remotes(None), [])
+        self.assertEqual(
+            normalize_remotes(["192.168.0.248", {"id": "gpu-243", "destination": "192.168.0.243"}]),
+            [
+                {"id": "192.168.0.248", "destination": "192.168.0.248"},
+                {"id": "gpu-243", "destination": "192.168.0.243"},
+            ],
+        )
+        self.assertEqual(normalize_remotes([""]), [])
+        self.assertEqual(normalize_remotes([{"id": "x"}]), [])
+
+        def failing_runner(_destination: str) -> str:
+            raise OSError("no route to host")
+
+        now = int(time.time())
+        sessions, status = collect_remote_sessions(
+            [{"id": "gpu-240", "destination": "192.168.0.240"}], now, runner=failing_runner
+        )
+        self.assertEqual(sessions, [])
+        self.assertEqual(status, [{"id": "gpu-240", "state": "unreachable"}])
+        compile(PROBE_SCRIPT, "probe", "exec")
+
+    def test_remote_sessions_join_snapshot_and_close(self) -> None:
+        import time
+        from rinq import events, remote_sessions, sessions, state as state_mod
+        from rinq.remote_sessions import RemoteSessionRefresher
+
+        now = int(time.time())
+        probe = [self._claude_probe_entry(now)]
+        refresher = RemoteSessionRefresher()
+        try:
+            original = remote_sessions._refresher
+            remote_sessions._refresher = refresher
+            refresher._refresh_once = lambda: None  # keep the preloaded snapshot
+            with remote_sessions._refresher._lock:
+                remote_sessions._refresher._sessions = remote_sessions._sessions_from_probe(
+                    probe, "gpu-248", now
+                )
+                remote_sessions._refresher._status = [{"id": "gpu-248", "state": "ok"}]
+                remote_sessions._refresher._updatedAt = now
+
+            snapshot = sessions.build_sessions({}, now)
+            session = next(
+                s for s in snapshot["sessions"] if s["id"].startswith("gpu-248:claude:")
+            )
+            self.assertEqual(session["remote"], "gpu-248")
+            self.assertEqual(snapshot["remotes"], [{"id": "gpu-248", "state": "ok"}])
+
+            state = state_mod.blank_state()
+            events.apply_event(
+                state,
+                {"state": "closed", "title": "closed", "sessionId": session["id"]},
+                self.cfg,
+            )
+            closed = sessions.build_sessions(state, now)
+            self.assertNotIn(session["id"], [s["id"] for s in closed["sessions"]])
+
+            # An unreachable host keeps its last good sessions visible.
+            import rinq.config as config_mod
+            saved_load = config_mod.load_config
+            saved_collect = remote_sessions.collect_remote_sessions
+            config_mod.load_config = lambda: {
+                "sessionRemotes": [{"id": "gpu-248", "destination": "192.168.0.248"}]
+            }
+            remote_sessions.collect_remote_sessions = lambda *a, **k: (
+                [], [{"id": "gpu-248", "state": "unreachable"}]
+            )
+            try:
+                RemoteSessionRefresher._refresh_once(refresher)
+                with remote_sessions._refresher._lock:
+                    self.assertEqual(
+                        [s["id"] for s in refresher._sessions], [session["id"]]
+                    )
+                    self.assertEqual(
+                        refresher._status, [{"id": "gpu-248", "state": "unreachable"}]
+                    )
+            finally:
+                config_mod.load_config = saved_load
+                remote_sessions.collect_remote_sessions = saved_collect
+        finally:
+            remote_sessions._refresher = original
+
+
 if __name__ == "__main__":
     unittest.main()

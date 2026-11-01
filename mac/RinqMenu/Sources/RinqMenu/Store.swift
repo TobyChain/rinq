@@ -49,6 +49,20 @@ final class Store: ObservableObject {
         if !Task.isCancelled { sessions = snapshot }
     }
 
+    /// Hide one session from Rinq. The daemon writes a tombstone; the agent
+    /// process or IDE chat itself keeps running.
+    func closeSession(_ id: String) async {
+        guard let url = URL(string: "\(base)/sessions/close"),
+              let data = try? JSONSerialization.data(withJSONObject: ["id": id]) else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = data
+        request.timeoutInterval = 10
+        _ = try? await URLSession.shared.data(for: request)
+        await refreshSessions()
+    }
+
     func keyDraft(_ id: String) -> String { drafts[id] ?? "" }
 
     func setDraft(_ id: String, _ v: String) { drafts[id] = v }

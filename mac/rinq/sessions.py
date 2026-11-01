@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .config import load_config
+from .ide_sessions import ADAPTER as IDE_ADAPTER, collect_ide_sessions
+from .remote_sessions import remote_snapshot
 from .usage import UsageSource, _json, _session_identity, _timestamp, discover_sources
 
 # Only sessions touched within this window are reported.
@@ -44,7 +46,9 @@ SUMMARY_LIMIT = 160
 SESSION_ADAPTERS = {"codex", "traex", "claude_code", "omp", "pi"}
 OPEN_STATES = {"running", "subagents_running", "waiting", "idle"}
 _STATE_RANK = {"running": 0, "subagents_running": 1, "waiting": 2, "idle": 3}
-_APP_RANK = {"claude_code": 0, "codex": 1, "traex": 2, "omp": 3, "pi": 4}
+_APP_RANK = {
+    "claude_code": 0, "codex": 1, "traex": 2, "omp": 3, "pi": 4, IDE_ADAPTER: 5,
+}
 _SUBAGENT_TOOLS = {"Task", "Agent", "spawn_agent", "subagent"}
 
 # Claude Code wraps slash commands and shell IO in transcript-only tags that
@@ -120,6 +124,17 @@ def build_sessions(state: dict[str, Any] | None = None, now_ts: int | None = Non
             scanned[session["id"]] = session
 
     sessions = dict(scanned)
+    for session in _ide_sessions(state, now_ts):
+        current = sessions.get(session["id"])
+        if current is None or int(session.get("updatedAt", 0)) >= int(current.get("updatedAt", 0)):
+            sessions[session["id"]] = session
+    remote_sessions_list, remote_status, _ = remote_snapshot()
+    for session in remote_sessions_list:
+        if session["id"] in closed_sessions:
+            continue
+        current = sessions.get(session["id"])
+        if current is None or int(session.get("updatedAt", 0)) >= int(current.get("updatedAt", 0)):
+            sessions[session["id"]] = session
     for session_id, hook in _live_hooks(state or {}, now_ts):
         existing = scanned.get(session_id)
         record = _hook_session(session_id, hook)
@@ -169,7 +184,20 @@ def build_sessions(state: dict[str, Any] | None = None, now_ts: int | None = Non
         "doneToday": int(agents.get("doneToday", 0) or 0),
         "failedToday": int(agents.get("failedToday", 0) or 0),
     }
-    return {"version": 1, "updatedAt": now_ts, "sessions": ordered, "counts": counts}
+    return {
+        "version": 1, "updatedAt": now_ts,
+        "sessions": ordered, "counts": counts,
+        "remotes": remote_status,
+    }
+
+
+def _ide_sessions(state: dict[str, Any], now_ts: int) -> list[dict[str, Any]]:
+    """IDE chat sessions, honoring the Integrations cancellations."""
+    disabled = load_config().get("integrationOff")
+    disabled_ids = {str(item) for item in disabled} if isinstance(disabled, list) else set()
+    closed = (state or {}).get("closedSessions", {})
+    exclude_ids = {str(sid) for sid in closed} if isinstance(closed, dict) else set()
+    return collect_ide_sessions(now_ts, disabled_ids, exclude_ids)
 
 
 # --------------------------------------------------------------------------- #
@@ -264,6 +292,7 @@ def _parse_claude(tail: _Tail, path: Path, mtime: int, now_ts: int) -> dict[str,
     last_text = ""
     last_prompt = ""
     open_tool: str | None = None
+    pending_question: dict[str, Any] | None = None
     subagent_count = 0
     terminal: str | None = None
     failed = False
@@ -288,6 +317,9 @@ def _parse_claude(tail: _Tail, path: Path, mtime: int, now_ts: int) -> dict[str,
             if tools:
                 open_tool = tools[-1]
                 subagent_count = sum(1 for tool in tools if tool in _SUBAGENT_TOOLS)
+            question = _ask_user_question(message.get("content"))
+            if question is not None:
+                pending_question = question
             if message.get("stop_reason") == "end_turn":
                 open_tool = None
                 subagent_count = 0
@@ -297,6 +329,7 @@ def _parse_claude(tail: _Tail, path: Path, mtime: int, now_ts: int) -> dict[str,
             if any(_is_tool_result(block) for block in message.get("content", []) if isinstance(block, dict)):
                 open_tool = None
                 subagent_count = 0
+                pending_question = None
             elif text:
                 last_prompt = text
                 terminal = "running"
@@ -316,7 +349,16 @@ def _parse_claude(tail: _Tail, path: Path, mtime: int, now_ts: int) -> dict[str,
         project = Path(cwd).name or project
     age = max(0, now_ts - mtime)
     state = _claude_state(terminal, open_tool, subagent_count > 0, failed, age)
-    is_open = _log_is_open(state, age)
+    if pending_question is not None and state not in ("failed", "completed"):
+        # An unanswered AskUserQuestion call is a prompt for the user, so the
+        # honest display state is waiting rather than running. The transcript
+        # goes quiet while the agent waits, so the usual 10-minute visibility
+        # window would drop the question; an exact question keeps the row
+        # alive until it is answered (or ages out of the 24h scan window).
+        state = "waiting"
+        is_open = True
+    else:
+        is_open = _log_is_open(state, age)
     summary = _one_line(last_text) or _tool_summary(open_tool) or _one_line(last_prompt)
     session = _base_session("claude_code", f"claude:{session_id}", "Claude Code", mtime, path)
     session.update({
@@ -325,7 +367,34 @@ def _parse_claude(tail: _Tail, path: Path, mtime: int, now_ts: int) -> dict[str,
         "summary": summary or _state_caption(state),
         "startedAt": started_at, "updatedAt": mtime,
     })
+    if pending_question is not None:
+        session["question"] = pending_question
     return session
+
+
+def _ask_user_question(content: Any) -> dict[str, Any] | None:
+    """Extract an unanswered AskUserQuestion prompt from assistant content."""
+    if not isinstance(content, list):
+        return None
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        if block.get("name") != "AskUserQuestion":
+            continue
+        questions = (block.get("input") or {}).get("questions")
+        if not isinstance(questions, list) or not questions:
+            continue
+        first = questions[0] if isinstance(questions[0], dict) else {}
+        text = str(first.get("question") or "").strip()
+        if not text:
+            continue
+        options = [
+            str(opt.get("label") or "").strip()
+            for opt in (first.get("options") or [])
+            if isinstance(opt, dict) and opt.get("label")
+        ]
+        return {"text": _one_line(text), "options": options[:4]}
+    return None
 
 
 def _claude_state(

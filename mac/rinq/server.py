@@ -9,9 +9,10 @@ from typing import Any
 from .collectors import collect
 from .config import load_config
 from .dashboard import HTML
-from .events import apply_event
+from .events import apply_event, close_session
 from .focus import current_focus
 from .push import push_glance
+from .remote_sessions import start_refresher
 from . import sessions as sessions_mod
 from .settings_api import apply_public_settings, connect_integration, public_settings
 from .state import load_state, update_state
@@ -136,6 +137,20 @@ class Handler(BaseHTTPRequestHandler):
                 return
             invalidate_sessions_cache()
             self._send_json(200, {"ok": True})
+        elif path == "/sessions/close":
+            if not isinstance(payload, dict):
+                self._send_json(400, {"error": "invalid json body"})
+                return
+            if self.client_address[0] not in ("127.0.0.1", "::1"):
+                self._send_json(403, {"error": "session actions are local-only"})
+                return
+            session_id = str(payload.get("id") or "").strip()
+            if not session_id:
+                self._send_json(400, {"error": "missing session id"})
+                return
+            update_state(lambda state: close_session(state, session_id))
+            invalidate_sessions_cache()
+            self._send_json(200, {"ok": True})
         elif path == "/mock":
             def _apply_mock(state: dict[str, Any]) -> None:
                 state["rings"] = payload.get("rings", [])
@@ -186,6 +201,7 @@ def _local_ip() -> str:
 
 
 def serve(port: int, host: str = "127.0.0.1") -> None:
+    start_refresher()
     ThreadingHTTPServer.allow_reuse_address = True
     httpd = ThreadingHTTPServer((host, port), Handler)
     print(f"rinq serving on http://{host}:{port}")

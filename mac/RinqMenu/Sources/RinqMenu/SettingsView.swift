@@ -25,7 +25,10 @@ struct DashboardView: View {
         let allRings = store.status?.rings ?? []
         return VStack(spacing: 0) {
             if let snapshot = store.sessions, snapshot.sessions.contains(where: { $0.isOpen == true }) {
-                AgentSessionsPanel(snapshot: snapshot)
+                AgentSessionsPanel(
+                    snapshot: snapshot,
+                    onClose: { id in Task { await store.closeSession(id) } }
+                )
             }
 
             if allRings.isEmpty {
