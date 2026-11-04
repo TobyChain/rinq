@@ -801,12 +801,13 @@ class UsageTests(unittest.TestCase):
 
         previous = {name: os.environ.get(name) for name in (
             "CODEX_HOME", "TRAECLI_HOME", "CLAUDE_CONFIG_DIR", "ZCODE_HOME",
-            "PI_CODING_AGENT_DIR",
+            "PI_CODING_AGENT_DIR", "PI_AGENT_DIR",
         )}
         test_home = tempfile.mkdtemp(prefix="rinq-omp-db-")
         previous_db_path = usage.USAGE_DB_PATH
         for name in ("CODEX_HOME", "TRAECLI_HOME", "CLAUDE_CONFIG_DIR", "ZCODE_HOME"):
             os.environ[name] = os.path.join(test_home, f"missing-{name.lower()}")
+        os.environ["PI_AGENT_DIR"] = os.path.join(test_home, "missing-pi")
         os.environ["PI_CODING_AGENT_DIR"] = agent_dir
         usage.USAGE_DB_PATH = Path(test_home) / "usage.sqlite3"
         try:
